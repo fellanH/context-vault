@@ -2,7 +2,16 @@
  * embed.js — Text embedding via HuggingFace transformers
  */
 
-import { pipeline } from "@huggingface/transformers";
+import { pipeline, env } from "@huggingface/transformers";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
+
+// Redirect model cache to ~/.context-mcp/models/ so it works when the
+// package is installed globally in a root-owned directory (e.g. /usr/lib/node_modules/).
+const modelCacheDir = join(homedir(), ".context-mcp", "models");
+mkdirSync(modelCacheDir, { recursive: true });
+env.cacheDir = modelCacheDir;
 
 let extractor = null;
 
