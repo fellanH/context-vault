@@ -1,5 +1,5 @@
 {
-  "name": "@fellanh/context-mcp",
+  "name": "context-mcp",
   "version": "2.0.1",
   "type": "module",
   "description": "Personal context vault — connects any AI agent to your accumulated knowledge",
@@ -20,7 +20,7 @@
   "author": "Felix Hellstrom",
   "repository": { "type": "git", "url": "https://github.com/fellanH/context-mcp.git" },
   "homepage": "https://github.com/fellanH/context-mcp",
-  "keywords": ["mcp", "ai", "knowledge-base", "vault", "rag", "sqlite", "embeddings", "claude"],
+  "keywords": ["mcp", "model-context-protocol", "ai", "knowledge-base", "knowledge-management", "vault", "rag", "sqlite", "embeddings", "claude", "cursor", "cline", "windsurf"],
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
     "@modelcontextprotocol/sdk": "^1.26.0",

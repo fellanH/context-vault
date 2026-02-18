@@ -1,5 +1,10 @@
 # context-mcp
 
+[![npm version](https://img.shields.io/npm/v/@fellanh/context-mcp)](https://www.npmjs.com/package/@fellanh/context-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/@fellanh/context-mcp)](https://www.npmjs.com/package/@fellanh/context-mcp)
+[![license](https://img.shields.io/npm/l/@fellanh/context-mcp)](./LICENSE)
+[![node](https://img.shields.io/node/v/@fellanh/context-mcp)](https://nodejs.org)
+
 Personal context vault — an MCP server that connects any AI agent to your accumulated knowledge.
 
 Your knowledge lives as markdown files in plain folders you own and can edit, version, or move freely. The SQLite database is a derived search index — rebuilt from those files at any time. The canonical flow is **files → DB** with a clean two-way mapping: disk structure determines folder placement, the DB stays flat and lightweight.
@@ -30,6 +35,12 @@ The SQLite database is stored at `~/.context-mcp/vault.db` by default (configura
 Requires **Node.js 20** or later.
 
 ## Install
+
+### Quick Start
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fellanH/context-mcp/main/install.sh | sh
+```
 
 ### npm (Recommended)
 
