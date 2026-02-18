@@ -2,7 +2,7 @@
   "name": "context-vault",
   "version": "2.1.0",
   "type": "module",
-  "description": "Personal context vault — connects any AI agent to your accumulated knowledge",
+  "description": "Persistent memory for AI agents — saves and searches knowledge across sessions",
   "bin": {
     "context-mcp": "bin/cli.js"
   },
