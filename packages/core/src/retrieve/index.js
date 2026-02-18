@@ -112,52 +112,54 @@ export async function hybridSearch(
     }
   }
 
-  // Vector similarity search
+  // Vector similarity search (skipped if embedding unavailable)
   try {
     const vecCount = ctx.db
       .prepare("SELECT COUNT(*) as c FROM vault_vec")
       .get().c;
     if (vecCount > 0) {
       const queryVec = await ctx.embed(query);
-      // Increase limits in hosted mode to compensate for post-filtering
-      const hasUserFilter = userIdFilter !== undefined;
-      const vecLimit = hasUserFilter ? (kindFilter ? 60 : 30) : (kindFilter ? 30 : 15);
-      const vecRows = ctx.db
-        .prepare(
-          `SELECT v.rowid, v.distance FROM vault_vec v WHERE embedding MATCH ? ORDER BY distance LIMIT ${vecLimit}`
-        )
-        .all(queryVec);
+      if (queryVec) {
+        // Increase limits in hosted mode to compensate for post-filtering
+        const hasUserFilter = userIdFilter !== undefined;
+        const vecLimit = hasUserFilter ? (kindFilter ? 60 : 30) : (kindFilter ? 30 : 15);
+        const vecRows = ctx.db
+          .prepare(
+            `SELECT v.rowid, v.distance FROM vault_vec v WHERE embedding MATCH ? ORDER BY distance LIMIT ${vecLimit}`
+          )
+          .all(queryVec);
 
-      if (vecRows.length) {
-        // Batch hydration: single query instead of N+1
-        const rowids = vecRows.map((vr) => vr.rowid);
-        const placeholders = rowids.map(() => "?").join(",");
-        const hydrated = ctx.db
-          .prepare(`SELECT rowid, * FROM vault WHERE rowid IN (${placeholders})`)
-          .all(...rowids);
+        if (vecRows.length) {
+          // Batch hydration: single query instead of N+1
+          const rowids = vecRows.map((vr) => vr.rowid);
+          const placeholders = rowids.map(() => "?").join(",");
+          const hydrated = ctx.db
+            .prepare(`SELECT rowid, * FROM vault WHERE rowid IN (${placeholders})`)
+            .all(...rowids);
 
-        const byRowid = new Map();
-        for (const row of hydrated) byRowid.set(row.rowid, row);
+          const byRowid = new Map();
+          for (const row of hydrated) byRowid.set(row.rowid, row);
 
-        for (const vr of vecRows) {
-          const row = byRowid.get(vr.rowid);
-          if (!row) continue;
-          if (userIdFilter !== undefined && row.user_id !== userIdFilter) continue;
-          if (kindFilter && row.kind !== kindFilter) continue;
-          if (categoryFilter && row.category !== categoryFilter) continue;
-          if (since && row.created_at < since) continue;
-          if (until && row.created_at > until) continue;
-          if (row.expires_at && new Date(row.expires_at) <= new Date()) continue;
+          for (const vr of vecRows) {
+            const row = byRowid.get(vr.rowid);
+            if (!row) continue;
+            if (userIdFilter !== undefined && row.user_id !== userIdFilter) continue;
+            if (kindFilter && row.kind !== kindFilter) continue;
+            if (categoryFilter && row.category !== categoryFilter) continue;
+            if (since && row.created_at < since) continue;
+            if (until && row.created_at > until) continue;
+            if (row.expires_at && new Date(row.expires_at) <= new Date()) continue;
 
-          const { rowid: _rowid, ...cleanRow } = row;
-          // sqlite-vec returns L2 distance [0, 2] for normalized vectors.
-          // Convert to similarity [1, 0] with: 1 - distance/2
-          const vecScore = Math.max(0, 1 - vr.distance / 2) * VEC_WEIGHT;
-          const existing = results.get(cleanRow.id);
-          if (existing) {
-            existing.score += vecScore;
-          } else {
-            results.set(cleanRow.id, { ...cleanRow, score: vecScore });
+            const { rowid: _rowid, ...cleanRow } = row;
+            // sqlite-vec returns L2 distance [0, 2] for normalized vectors.
+            // Convert to similarity [1, 0] with: 1 - distance/2
+            const vecScore = Math.max(0, 1 - vr.distance / 2) * VEC_WEIGHT;
+            const existing = results.get(cleanRow.id);
+            if (existing) {
+              existing.score += vecScore;
+            } else {
+              results.set(cleanRow.id, { ...cleanRow, score: vecScore });
+            }
           }
         }
       }

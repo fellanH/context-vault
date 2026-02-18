@@ -15,7 +15,7 @@ import { parseFrontmatter, formatFrontmatter } from "../core/frontmatter.js";
 import { formatBody } from "./formatters.js";
 import { writeEntryFile } from "./file-ops.js";
 
-export function writeEntry(ctx, { kind, title, body, meta, tags, source, folder, identity_key, expires_at }) {
+export function writeEntry(ctx, { kind, title, body, meta, tags, source, folder, identity_key, expires_at, userId }) {
   if (!kind || typeof kind !== "string") {
     throw new Error("writeEntry: kind is required (non-empty string)");
   }
@@ -59,7 +59,7 @@ export function writeEntry(ctx, { kind, title, body, meta, tags, source, folder,
     category, identity_key, expires_at,
   });
 
-  return { id, filePath, kind, category, title, body, meta, tags, source, createdAt, identity_key, expires_at };
+  return { id, filePath, kind, category, title, body, meta, tags, source, createdAt, identity_key, expires_at, userId: userId || null };
 }
 
 /**
@@ -123,6 +123,7 @@ export function updateEntryFile(ctx, existing, updates) {
     createdAt: fmMeta.created || existing.created_at,
     identity_key: existing.identity_key,
     expires_at,
+    userId: existing.user_id || null,
   };
 }
 

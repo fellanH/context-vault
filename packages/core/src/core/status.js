@@ -5,16 +5,25 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { walkDir } from "./files.js";
+import { isEmbedAvailable } from "../index/embed.js";
 
 /**
  * Gather raw vault status data for formatting by consumers.
  *
  * @param {{ db, config }} ctx
+ * @param {{ userId?: string }} opts — optional userId for per-user stats
  * @returns {{ fileCount, subdirs, kindCounts, dbSize, stalePaths, resolvedFrom, embeddingStatus, errors }}
  */
-export function gatherVaultStatus(ctx) {
+export function gatherVaultStatus(ctx, opts = {}) {
   const { db, config } = ctx;
+  const { userId } = opts;
   const errors = [];
+
+  // Build user filter clause for DB queries
+  const hasUser = userId !== undefined;
+  const userWhere = hasUser ? "WHERE user_id = ?" : "";
+  const userAnd = hasUser ? "AND user_id = ?" : "";
+  const userParams = hasUser ? [userId] : [];
 
   // Count files in vault subdirs (auto-discover)
   let fileCount = 0;
@@ -37,7 +46,7 @@ export function gatherVaultStatus(ctx) {
   // Count DB rows by kind
   let kindCounts = [];
   try {
-    kindCounts = db.prepare("SELECT kind, COUNT(*) as c FROM vault GROUP BY kind").all();
+    kindCounts = db.prepare(`SELECT kind, COUNT(*) as c FROM vault ${userWhere} GROUP BY kind`).all(...userParams);
   } catch (e) {
     errors.push(`Kind count query failed: ${e.message}`);
   }
@@ -45,7 +54,7 @@ export function gatherVaultStatus(ctx) {
   // Count DB rows by category
   let categoryCounts = [];
   try {
-    categoryCounts = db.prepare("SELECT category, COUNT(*) as c FROM vault GROUP BY category").all();
+    categoryCounts = db.prepare(`SELECT category, COUNT(*) as c FROM vault ${userWhere} GROUP BY category`).all(...userParams);
   } catch (e) {
     errors.push(`Category count query failed: ${e.message}`);
   }
@@ -69,8 +78,8 @@ export function gatherVaultStatus(ctx) {
   let staleCount = 0;
   try {
     const result = db.prepare(
-      "SELECT COUNT(*) as c FROM vault WHERE file_path NOT LIKE ? || '%'"
-    ).get(config.vaultDir);
+      `SELECT COUNT(*) as c FROM vault WHERE file_path NOT LIKE ? || '%' ${userAnd}`
+    ).get(config.vaultDir, ...userParams);
     staleCount = result.c;
     stalePaths = staleCount > 0;
   } catch (e) {
@@ -81,8 +90,8 @@ export function gatherVaultStatus(ctx) {
   let expiredCount = 0;
   try {
     expiredCount = db.prepare(
-      "SELECT COUNT(*) as c FROM vault WHERE expires_at IS NOT NULL AND expires_at <= datetime('now')"
-    ).get().c;
+      `SELECT COUNT(*) as c FROM vault WHERE expires_at IS NOT NULL AND expires_at <= datetime('now') ${userAnd}`
+    ).get(...userParams).c;
   } catch (e) {
     errors.push(`Expired count failed: ${e.message}`);
   }
@@ -90,14 +99,17 @@ export function gatherVaultStatus(ctx) {
   // Embedding/vector status
   let embeddingStatus = null;
   try {
-    const total = db.prepare("SELECT COUNT(*) as c FROM vault").get().c;
+    const total = db.prepare(`SELECT COUNT(*) as c FROM vault ${userWhere}`).get(...userParams).c;
     const indexed = db.prepare(
-      "SELECT COUNT(*) as c FROM vault WHERE rowid IN (SELECT rowid FROM vault_vec)"
-    ).get().c;
+      `SELECT COUNT(*) as c FROM vault WHERE rowid IN (SELECT rowid FROM vault_vec) ${userAnd}`
+    ).get(...userParams).c;
     embeddingStatus = { indexed, total, missing: total - indexed };
   } catch (e) {
     errors.push(`Embedding status check failed: ${e.message}`);
   }
+
+  // Embedding model availability
+  const embedModelAvailable = isEmbedAvailable();
 
   return {
     fileCount,
@@ -110,6 +122,7 @@ export function gatherVaultStatus(ctx) {
     staleCount,
     expiredCount,
     embeddingStatus,
+    embedModelAvailable,
     resolvedFrom: config.resolvedFrom,
     errors,
   };

@@ -1,18 +1,24 @@
 {
   "name": "context-vault",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "type": "module",
   "description": "Persistent memory for AI agents — saves and searches knowledge across sessions",
   "bin": {
     "context-mcp": "bin/cli.js"
   },
   "main": "src/server/index.js",
+  "exports": {
+    ".": "./src/server/index.js",
+    "./cli": "./bin/cli.js"
+  },
   "scripts": {
-    "prepack": "mkdir -p node_modules/@context-vault && rm -rf node_modules/@context-vault/core && cp -rL ../core node_modules/@context-vault/core && rm -rf node_modules/@context-vault/core/node_modules"
+    "postinstall": "node scripts/postinstall.js",
+    "prepack": "node scripts/prepack.js"
   },
   "files": [
     "bin/",
     "src/",
+    "scripts/",
     "ui/",
     "README.md",
     "LICENSE"
@@ -22,9 +28,10 @@
   "author": "Felix Hellstrom",
   "repository": { "type": "git", "url": "git+https://github.com/fellanH/context-mcp.git" },
   "homepage": "https://github.com/fellanH/context-mcp",
+  "bugs": { "url": "https://github.com/fellanH/context-mcp/issues" },
   "keywords": ["mcp", "model-context-protocol", "ai", "knowledge-base", "knowledge-management", "vault", "rag", "sqlite", "embeddings", "claude", "cursor", "cline", "windsurf"],
   "bundledDependencies": ["@context-vault/core"],
   "dependencies": {
-    "@context-vault/core": "^2.3.0"
+    "@context-vault/core": "^2.4.0"
   }
 }

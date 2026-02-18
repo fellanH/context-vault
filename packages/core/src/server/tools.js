@@ -25,10 +25,12 @@ import { ok, err, ensureVaultExists, ensureValidKind } from "./helpers.js";
  */
 export function registerTools(server, ctx) {
   const { config } = ctx;
+  const userId = ctx.userId !== undefined ? ctx.userId : undefined;
 
   // ─── Auto-Reindex (runs once per session, on first tool call) ──────────────
 
-  let reindexDone = false;
+  // In hosted mode, skip reindex — DB is always in sync via writeEntry→indexEntry
+  let reindexDone = userId !== undefined ? true : false;
   let reindexPromise = null;
   let reindexAttempts = 0;
   let reindexFailed = false;
@@ -85,7 +87,7 @@ export function registerTools(server, ctx) {
       // Gap 1: Entity exact-match by identity_key
       if (identity_key) {
         if (!kindFilter) return err("identity_key requires kind to be specified", "INVALID_INPUT");
-        const match = ctx.stmts.getByIdentityKey.get(kindFilter, identity_key);
+        const match = ctx.stmts.getByIdentityKey.get(kindFilter, identity_key, userId !== undefined ? userId : null);
         if (match) {
           const entryTags = match.tags ? JSON.parse(match.tags) : [];
           const tagStr = entryTags.length ? entryTags.join(", ") : "none";
@@ -122,6 +124,7 @@ export function registerTools(server, ctx) {
           until: effectiveUntil,
           limit: limit || 10,
           decayDays: config.eventDecayDays || 30,
+          userIdFilter: userId,
         });
 
         // Post-filter by tags if provided
@@ -135,6 +138,7 @@ export function registerTools(server, ctx) {
         // Filter-only mode (no query, use SQL directly)
         const clauses = [];
         const params = [];
+        if (userId !== undefined) { clauses.push("user_id = ?"); params.push(userId); }
         if (kindFilter) { clauses.push("kind = ?"); params.push(kindFilter); }
         if (category) { clauses.push("category = ?"); params.push(category); }
         if (effectiveSince) { clauses.push("created_at >= ?"); params.push(effectiveSince); }
@@ -157,6 +161,18 @@ export function registerTools(server, ctx) {
       }
 
       if (!filtered.length) return ok(hasQuery ? "No results found for: " + query : "No entries found matching the given filters.");
+
+      // Decrypt encrypted entries if ctx.decrypt is available
+      if (ctx.decrypt) {
+        for (const r of filtered) {
+          if (r.body_encrypted) {
+            const decrypted = await ctx.decrypt(r);
+            r.body = decrypted.body;
+            if (decrypted.title) r.title = decrypted.title;
+            if (decrypted.meta) r.meta = JSON.stringify(decrypted.meta);
+          }
+        }
+      }
 
       const lines = [];
       if (reindexFailed) lines.push(`> **Warning:** Auto-reindex failed. Results may be stale. Run \`context-mcp reindex\` to fix.\n`);
@@ -207,11 +223,24 @@ export function registerTools(server, ctx) {
         const existing = ctx.stmts.getEntryById.get(id);
         if (!existing) return err(`Entry not found: ${id}`, "NOT_FOUND");
 
+        // Ownership check: don't leak existence across users
+        if (userId !== undefined && existing.user_id !== userId) {
+          return err(`Entry not found: ${id}`, "NOT_FOUND");
+        }
+
         if (kind && normalizeKind(kind) !== existing.kind) {
           return err(`Cannot change kind (current: "${existing.kind}"). Delete and re-create instead.`, "INVALID_UPDATE");
         }
         if (identity_key && identity_key !== existing.identity_key) {
           return err(`Cannot change identity_key (current: "${existing.identity_key}"). Delete and re-create instead.`, "INVALID_UPDATE");
+        }
+
+        // Decrypt existing entry before merge if encrypted
+        if (ctx.decrypt && existing.body_encrypted) {
+          const decrypted = await ctx.decrypt(existing);
+          existing.body = decrypted.body;
+          if (decrypted.title) existing.title = decrypted.title;
+          if (decrypted.meta) existing.meta = JSON.stringify(decrypted.meta);
         }
 
         const entry = updateEntryFile(ctx, existing, { title, body, tags, meta, source, expires_at });
@@ -241,7 +270,7 @@ export function registerTools(server, ctx) {
       if (folder) mergedMeta.folder = folder;
       const finalMeta = Object.keys(mergedMeta).length ? mergedMeta : undefined;
 
-      const entry = await captureAndIndex(ctx, { kind, title, body, meta: finalMeta, tags, source, folder, identity_key, expires_at }, indexEntry);
+      const entry = await captureAndIndex(ctx, { kind, title, body, meta: finalMeta, tags, source, folder, identity_key, expires_at, userId }, indexEntry);
       const relPath = entry.filePath ? entry.filePath.replace(config.vaultDir + "/", "") : entry.filePath;
       const parts = [`✓ Saved ${kind} → ${relPath}`, `  id: ${entry.id}`];
       if (title) parts.push(`  title: ${title}`);
@@ -271,6 +300,10 @@ export function registerTools(server, ctx) {
       const clauses = [];
       const params = [];
 
+      if (userId !== undefined) {
+        clauses.push("user_id = ?");
+        params.push(userId);
+      }
       if (kind) {
         clauses.push("kind = ?");
         params.push(normalizeKind(kind));
@@ -340,6 +373,11 @@ export function registerTools(server, ctx) {
       const entry = ctx.stmts.getEntryById.get(id);
       if (!entry) return err(`Entry not found: ${id}`, "NOT_FOUND");
 
+      // Ownership check: don't leak existence across users
+      if (userId !== undefined && entry.user_id !== userId) {
+        return err(`Entry not found: ${id}`, "NOT_FOUND");
+      }
+
       // Delete file from disk first (source of truth)
       if (entry.file_path) {
         try { unlinkSync(entry.file_path); } catch {}
@@ -385,6 +423,7 @@ export function registerTools(server, ctx) {
           tags: [type, effectiveSeverity],
           source: "submit_feedback",
           meta: { feedback_type: type, severity: effectiveSeverity, status: "new" },
+          userId,
         },
         indexEntry
       );
@@ -401,7 +440,7 @@ export function registerTools(server, ctx) {
     "Show vault health: resolved config, file counts per kind, database size, and any issues. Use to verify setup or troubleshoot. Call this when a user asks about their vault or to debug search issues.",
     {},
     () => {
-      const status = gatherVaultStatus(ctx);
+      const status = gatherVaultStatus(ctx, { userId });
 
       const hasIssues = status.stalePaths || (status.embeddingStatus?.missing > 0);
       const healthIcon = hasIssues ? "⚠" : "✓";
@@ -415,13 +454,18 @@ export function registerTools(server, ctx) {
         `Data dir:  ${config.dataDir}`,
         `Config:    ${config.configPath}`,
         `Resolved via: ${status.resolvedFrom}`,
-        `Schema:    v5 (categories)`,
+        `Schema:    v6 (multi-tenancy)`,
       ];
 
       if (status.embeddingStatus) {
         const { indexed, total, missing } = status.embeddingStatus;
         const pct = total > 0 ? Math.round((indexed / total) * 100) : 100;
         lines.push(`Embeddings: ${indexed}/${total} (${pct}%)`);
+      }
+      if (status.embedModelAvailable === false) {
+        lines.push(`Embed model: unavailable (semantic search disabled, FTS still works)`);
+      } else if (status.embedModelAvailable === true) {
+        lines.push(`Embed model: loaded`);
       }
       lines.push(`Decay:     ${config.eventDecayDays} days (event recency window)`);
       if (status.expiredCount > 0) {

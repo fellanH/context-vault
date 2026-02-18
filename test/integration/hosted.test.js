@@ -1,13 +1,16 @@
 /**
  * Integration test for the hosted Hono MCP server.
  * Uses the MCP client SDK to connect via Streamable HTTP and call all 6 tools.
+ * Uses a temp directory to avoid polluting the real vault.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const PORT = 3457;
 const SERVER_ENTRY = resolve(import.meta.dirname, "../../packages/hosted/src/index.js");
@@ -15,11 +18,20 @@ const SERVER_ENTRY = resolve(import.meta.dirname, "../../packages/hosted/src/ind
 describe("hosted MCP server", () => {
   let serverProcess;
   let client;
+  let tmpDir;
 
   beforeAll(async () => {
-    // Start the hosted server
+    // Use isolated temp directory for vault data
+    tmpDir = mkdtempSync(join(tmpdir(), "hosted-test-"));
+
+    // Start the hosted server with temp vault
     serverProcess = spawn("node", [SERVER_ENTRY], {
-      env: { ...process.env, PORT: String(PORT) },
+      env: {
+        ...process.env,
+        PORT: String(PORT),
+        CONTEXT_MCP_DATA_DIR: tmpDir,
+        CONTEXT_MCP_VAULT_DIR: join(tmpDir, "vault"),
+      },
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -54,6 +66,7 @@ describe("hosted MCP server", () => {
       serverProcess.kill("SIGTERM");
       await new Promise((res) => serverProcess.on("exit", res));
     }
+    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it("lists all 6 tools", async () => {

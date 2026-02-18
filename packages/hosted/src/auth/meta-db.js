@@ -59,6 +59,16 @@ export function initMetaDb(dbPath) {
   metaDb.pragma("journal_mode = WAL");
   metaDb.pragma("foreign_keys = ON");
   metaDb.exec(META_SCHEMA);
+
+  // Add DEK columns for at-rest encryption (idempotent)
+  const cols = metaDb.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
+  if (!cols.includes("encrypted_dek")) {
+    metaDb.exec(`ALTER TABLE users ADD COLUMN encrypted_dek BLOB`);
+  }
+  if (!cols.includes("dek_salt")) {
+    metaDb.exec(`ALTER TABLE users ADD COLUMN dek_salt BLOB`);
+  }
+
   return metaDb;
 }
 
@@ -114,6 +124,10 @@ export function prepareMetaStatements(db) {
     logUsage: db.prepare(`INSERT INTO usage_log (user_id, operation) VALUES (?, ?)`),
     countUsageToday: db.prepare(`SELECT COUNT(*) as c FROM usage_log WHERE user_id = ? AND operation = ? AND timestamp >= date('now')`),
     countEntries: db.prepare(`SELECT COUNT(*) as c FROM usage_log WHERE user_id = ? AND operation = 'save_context'`),
+
+    // DEK (encryption)
+    updateUserDek: db.prepare(`UPDATE users SET encrypted_dek = ?, dek_salt = ?, updated_at = datetime('now') WHERE id = ?`),
+    getUserDekData: db.prepare(`SELECT encrypted_dek, dek_salt FROM users WHERE id = ?`),
   };
   return stmts;
 }

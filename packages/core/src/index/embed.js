@@ -1,5 +1,8 @@
 /**
  * embed.js — Text embedding via HuggingFace transformers
+ *
+ * Graceful degradation: if the embedding model fails to load (offline, first run,
+ * disk issues), semantic search is disabled but FTS still works.
  */
 
 import { pipeline, env } from "@huggingface/transformers";
@@ -15,42 +18,54 @@ env.cacheDir = modelCacheDir;
 
 let extractor = null;
 
+/** @type {null | true | false} null = unknown, true = working, false = failed */
+let embedAvailable = null;
+
 async function ensurePipeline() {
-  if (!extractor) {
-    try {
-      console.error("[context-mcp] Loading embedding model (first run may download ~22MB)...");
-      extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
-    } catch (e) {
-      console.error(`[context-mcp] Failed to load embedding model: ${e.message}`);
-      console.error(`[context-mcp] The model (~22MB) is downloaded on first run.`);
-      console.error(`[context-mcp] Check: network connectivity, disk space, Node.js >=20`);
-      throw e;
-    }
+  if (embedAvailable === false) return null;
+  if (extractor) return extractor;
+
+  try {
+    console.error("[context-mcp] Loading embedding model (first run may download ~22MB)...");
+    extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
+    embedAvailable = true;
+    return extractor;
+  } catch (e) {
+    embedAvailable = false;
+    console.error(`[context-mcp] Failed to load embedding model: ${e.message}`);
+    console.error(`[context-mcp] Semantic search disabled. Full-text search still works.`);
+    return null;
   }
-  return extractor;
 }
 
 export async function embed(text) {
   const ext = await ensurePipeline();
+  if (!ext) return null;
+
   const result = await ext([text], { pooling: "mean", normalize: true });
-  // P5: Health check — force re-init on empty results
+  // Health check — force re-init on empty results
   if (!result?.data?.length) {
     extractor = null;
+    embedAvailable = null;
     throw new Error("Embedding pipeline returned empty result");
   }
   return new Float32Array(result.data);
 }
 
 /**
- * P4: Batch embedding — embed multiple texts in a single pipeline call.
+ * Batch embedding — embed multiple texts in a single pipeline call.
  * Returns an array of Float32Array embeddings (one per input text).
+ * Returns array of nulls if embedding is unavailable.
  */
 export async function embedBatch(texts) {
   if (!texts.length) return [];
   const ext = await ensurePipeline();
+  if (!ext) return texts.map(() => null);
+
   const result = await ext(texts, { pooling: "mean", normalize: true });
   if (!result?.data?.length) {
     extractor = null;
+    embedAvailable = null;
     throw new Error("Embedding pipeline returned empty result");
   }
   const dim = result.data.length / texts.length;
@@ -60,7 +75,13 @@ export async function embedBatch(texts) {
   return texts.map((_, i) => new Float32Array(result.data.buffer, i * dim * 4, dim));
 }
 
-/** P5: Force re-initialization on next embed call. */
+/** Force re-initialization on next embed call. */
 export function resetEmbedPipeline() {
   extractor = null;
+  embedAvailable = null;
+}
+
+/** Check if embedding is currently available. */
+export function isEmbedAvailable() {
+  return embedAvailable;
 }

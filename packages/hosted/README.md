@@ -82,6 +82,70 @@ curl http://localhost:3000/api/billing/usage \
 
 ## Deployment
 
+**Preferred platform:** Fly.io (Docker-based) for the hosted MCP server.
+
+### Hosting Architecture
+
+Recommended split for the full context-vault SaaS stack:
+
+| App | Platform | Why |
+|-----|----------|-----|
+| Hosted MCP server | **Fly.io** | Long-running HTTP server, persistent SQLite volumes, MCP streaming |
+| Marketing site | **Vercel** | Static/SSG, edge delivery, preview deploys |
+| Admin dashboard | **Vercel** | SPA/Next.js calling the hosted API, familiar Vercel DX |
+
+The hosted server exposes CORS for browser clients. The dashboard authenticates with `Bearer cv_...` (or your auth provider) and calls the Fly-hosted API.
+
+### Fly.io (recommended)
+
+From the monorepo root:
+
+```bash
+# Install flyctl: https://fly.io/docs/hands-on/install-flyctl/
+fly launch --name context-vault --copy-config --no-deploy
+
+# Set secrets (use live keys for production)
+fly secrets set AUTH_REQUIRED=true
+fly secrets set STRIPE_SECRET_KEY=sk_live_...
+fly secrets set STRIPE_WEBHOOK_SECRET=whsec_...
+fly secrets set STRIPE_PRICE_PRO=price_...
+
+# Deploy
+fly deploy
+```
+
+Create a `fly.toml` at monorepo root:
+
+```toml
+# fly.toml
+app = "context-vault"
+
+[build]
+  dockerfile = "packages/hosted/Dockerfile"
+  [build.context]
+    path = "."
+
+[env]
+  PORT = "3000"
+  AUTH_REQUIRED = "true"
+  CONTEXT_MCP_DATA_DIR = "/data"
+  CONTEXT_MCP_VAULT_DIR = "/data/vault"
+
+[[mounts]]
+  source = "context_vault_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+```
+
+Create the volume before first deploy: `fly volumes create context_vault_data --size 1`
+
 ### Railway
 
 ```bash
@@ -96,32 +160,19 @@ curl http://localhost:3000/api/billing/usage \
 railway up
 ```
 
-### Fly.io
+### Docker (standalone)
 
 ```bash
-# fly.toml
-# [env]
-#   PORT = "3000"
-#   AUTH_REQUIRED = "true"
-
-fly launch
-fly secrets set STRIPE_SECRET_KEY=sk_live_...
-fly secrets set STRIPE_WEBHOOK_SECRET=whsec_...
-fly secrets set STRIPE_PRICE_PRO=price_...
-fly deploy
-```
-
-### Docker
-
-```dockerfile
-FROM node:20-slim
-WORKDIR /app
-COPY package*.json ./
-COPY packages/core ./packages/core
-COPY packages/hosted ./packages/hosted
-RUN npm install --workspace=packages/hosted
-EXPOSE 3000
-CMD ["node", "packages/hosted/src/index.js"]
+docker build -f packages/hosted/Dockerfile -t context-vault .
+docker run -p 3000:3000 \
+  -e AUTH_REQUIRED=true \
+  -e STRIPE_SECRET_KEY=sk_live_... \
+  -e STRIPE_WEBHOOK_SECRET=whsec_... \
+  -e STRIPE_PRICE_PRO=price_... \
+  -v context_vault_data:/data \
+  -e CONTEXT_MCP_DATA_DIR=/data \
+  -e CONTEXT_MCP_VAULT_DIR=/data/vault \
+  context-vault
 ```
 
 ## Management API Reference

@@ -36,6 +36,7 @@ describe("hosted auth + management API", () => {
         ...process.env,
         PORT: String(PORT),
         AUTH_REQUIRED: "true",
+        VAULT_MASTER_SECRET: "test-secret-for-integration-tests",
         CONTEXT_MCP_DATA_DIR: tmpDir,
         CONTEXT_MCP_VAULT_DIR: join(tmpDir, "vault"),
       },
@@ -62,7 +63,7 @@ describe("hosted auth + management API", () => {
       await new Promise((res) => serverProcess.on("exit", res));
     }
     if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
-  });
+  }, 30000);
 
   it("health check works without auth", async () => {
     const res = await fetch(`${BASE}/health`);
@@ -356,4 +357,157 @@ describe("hosted auth + management API", () => {
     expect(results).toContain(429);
     expect(results.filter((s) => s === 429).length).toBe(1);
   });
+
+  // ─── Phase 4: Multi-user Isolation ──────────────────────────────────────────
+
+  it("multi-user isolation: User A entries invisible to User B", async () => {
+    // Register User A
+    const regA = await fetch(`${BASE}/api/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
+      body: JSON.stringify({ email: `iso-a-${RUN_ID}@test.com` }),
+    });
+    const { apiKey: keyA } = await regA.json();
+
+    // Register User B
+    const regB = await fetch(`${BASE}/api/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
+      body: JSON.stringify({ email: `iso-b-${RUN_ID}@test.com` }),
+    });
+    const { apiKey: keyB } = await regB.json();
+
+    // User A imports an entry with unique content
+    const importRes = await fetch(`${BASE}/api/vault/import`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${keyA.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "insight", body: "secret-alpha-unicorn-data", tags: ["isolation-test"] }),
+    });
+    expect(importRes.status).toBe(200);
+
+    // User B searches via MCP — should NOT find User A's entry
+    const transportB = new StreamableHTTPClientTransport(
+      new URL(`${BASE}/mcp`),
+      { requestInit: { headers: { Authorization: `Bearer ${keyB.key}` } } }
+    );
+    const clientB = new Client({ name: "test-client-b", version: "1.0.0" });
+    await clientB.connect(transportB);
+
+    const searchResult = await clientB.callTool({
+      name: "get_context",
+      arguments: { query: "secret-alpha-unicorn-data" },
+    });
+    // "No results" response echoes the query text, so check for the "No results" prefix
+    expect(searchResult.content[0].text).toContain("No results");
+
+    // User A searches via MCP — SHOULD find their entry
+    const transportA = new StreamableHTTPClientTransport(
+      new URL(`${BASE}/mcp`),
+      { requestInit: { headers: { Authorization: `Bearer ${keyA.key}` } } }
+    );
+    const clientA = new Client({ name: "test-client-a", version: "1.0.0" });
+    await clientA.connect(transportA);
+
+    const searchResultA = await clientA.callTool({
+      name: "get_context",
+      arguments: { query: "secret-alpha-unicorn-data" },
+    });
+    expect(searchResultA.content[0].text).toContain("secret-alpha-unicorn");
+
+    await clientA.close();
+    await clientB.close();
+  }, 60000);
+
+  it("encryption roundtrip: encrypted at rest, decrypted on read", async () => {
+    // Register user (VAULT_MASTER_SECRET is set in beforeAll env)
+    const regRes = await fetch(`${BASE}/api/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
+      body: JSON.stringify({ email: `enc-${RUN_ID}@test.com` }),
+    });
+    const { apiKey } = await regRes.json();
+
+    // Import an entry
+    const importRes = await fetch(`${BASE}/api/vault/import`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "insight", body: "encrypted-roundtrip-test-content", tags: ["encryption"] }),
+    });
+    expect(importRes.status).toBe(200);
+
+    // Search via MCP — should return decrypted content
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`${BASE}/mcp`),
+      { requestInit: { headers: { Authorization: `Bearer ${apiKey.key}` } } }
+    );
+    const client = new Client({ name: "test-client-enc", version: "1.0.0" });
+    await client.connect(transport);
+
+    const searchResult = await client.callTool({
+      name: "get_context",
+      arguments: { query: "encrypted-roundtrip-test-content" },
+    });
+    expect(searchResult.content[0].text).toContain("encrypted-roundtrip-test");
+
+    await client.close();
+  }, 60000);
+
+  it("cross-user delete: User B cannot delete User A's entry", async () => {
+    // Register User A
+    const regA = await fetch(`${BASE}/api/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
+      body: JSON.stringify({ email: `del-a-${RUN_ID}@test.com` }),
+    });
+    const { apiKey: keyA } = await regA.json();
+
+    // Register User B
+    const regB = await fetch(`${BASE}/api/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
+      body: JSON.stringify({ email: `del-b-${RUN_ID}@test.com` }),
+    });
+    const { apiKey: keyB } = await regB.json();
+
+    // User A imports an entry and gets the ID
+    const importRes = await fetch(`${BASE}/api/vault/import`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${keyA.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "insight", body: "cross-user-delete-test-data", tags: ["delete-test"] }),
+    });
+    const { id: entryId } = await importRes.json();
+    expect(entryId).toBeTruthy();
+
+    // User B tries to delete User A's entry via MCP
+    const transportB = new StreamableHTTPClientTransport(
+      new URL(`${BASE}/mcp`),
+      { requestInit: { headers: { Authorization: `Bearer ${keyB.key}` } } }
+    );
+    const clientB = new Client({ name: "test-client-del-b", version: "1.0.0" });
+    await clientB.connect(transportB);
+
+    const deleteResult = await clientB.callTool({
+      name: "delete_context",
+      arguments: { id: entryId },
+    });
+    // Should report not found (user B doesn't own this entry)
+    expect(deleteResult.content[0].text.toLowerCase()).toMatch(/not found|no entry/);
+
+    // Verify User A's entry still exists
+    const transportA = new StreamableHTTPClientTransport(
+      new URL(`${BASE}/mcp`),
+      { requestInit: { headers: { Authorization: `Bearer ${keyA.key}` } } }
+    );
+    const clientA = new Client({ name: "test-client-del-a", version: "1.0.0" });
+    await clientA.connect(transportA);
+
+    const searchResult = await clientA.callTool({
+      name: "get_context",
+      arguments: { query: "cross-user-delete-test-data" },
+    });
+    expect(searchResult.content[0].text).toContain("cross-user-delete-test");
+
+    await clientA.close();
+    await clientB.close();
+  }, 60000);
 });

@@ -1,7 +1,7 @@
 {
   "name": "context-vault-monorepo",
   "private": true,
-  "version": "2.3.0",
+  "version": "2.4.0",
   "type": "module",
   "workspaces": [
     "packages/core",
@@ -11,7 +11,11 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "release": "npm publish --workspace packages/local"
+    "release": "npm publish --workspace packages/local",
+    "deploy": "fly deploy",
+    "deploy:secrets": "echo 'Run: fly secrets set AUTH_REQUIRED=true VAULT_MASTER_SECRET=<secret> STRIPE_SECRET_KEY=<key> STRIPE_WEBHOOK_SECRET=<secret> STRIPE_PRICE_PRO=<price>'",
+    "docker:build": "docker build -f packages/hosted/Dockerfile -t context-vault .",
+    "docker:run": "docker run -p 3000:3000 -e AUTH_REQUIRED=false -v context_vault_data:/data -e CONTEXT_MCP_DATA_DIR=/data -e CONTEXT_MCP_VAULT_DIR=/data/vault context-vault"
   },
   "devDependencies": {
     "vitest": "^3.0.0"

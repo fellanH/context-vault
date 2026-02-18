@@ -20,7 +20,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { join, resolve, dirname } from "node:path";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { execSync, fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -73,6 +73,36 @@ function prompt(question, defaultVal) {
   });
 }
 
+// ─── Platform Helpers ────────────────────────────────────────────────────────
+
+const PLATFORM = platform();
+
+/** Get the platform-specific application data directory */
+function appDataDir() {
+  switch (PLATFORM) {
+    case "win32":
+      return process.env.APPDATA || join(HOME, "AppData", "Roaming");
+    case "darwin":
+      return join(HOME, "Library", "Application Support");
+    case "linux":
+    default:
+      return process.env.XDG_CONFIG_HOME || join(HOME, ".config");
+  }
+}
+
+/** Get the platform-specific VS Code extensions directory */
+function vscodeDataDir() {
+  switch (PLATFORM) {
+    case "win32":
+      return join(appDataDir(), "Code", "User", "globalStorage");
+    case "darwin":
+      return join(appDataDir(), "Code", "User", "globalStorage");
+    case "linux":
+    default:
+      return join(HOME, ".config", "Code", "User", "globalStorage");
+  }
+}
+
 // ─── Tool Detection ──────────────────────────────────────────────────────────
 
 const TOOLS = [
@@ -81,7 +111,8 @@ const TOOLS = [
     name: "Claude Code",
     detect: () => {
       try {
-        execSync("which claude", { stdio: "pipe" });
+        const cmd = PLATFORM === "win32" ? "where claude" : "which claude";
+        execSync(cmd, { stdio: "pipe" });
         return true;
       } catch {
         return false;
@@ -92,16 +123,9 @@ const TOOLS = [
   {
     id: "claude-desktop",
     name: "Claude Desktop",
-    detect: () =>
-      existsSync(join(HOME, "Library", "Application Support", "Claude")),
+    detect: () => existsSync(join(appDataDir(), "Claude")),
     configType: "json",
-    configPath: join(
-      HOME,
-      "Library",
-      "Application Support",
-      "Claude",
-      "claude_desktop_config.json"
-    ),
+    configPath: join(appDataDir(), "Claude", "claude_desktop_config.json"),
     configKey: "mcpServers",
   },
   {
@@ -124,26 +148,10 @@ const TOOLS = [
     id: "cline",
     name: "Cline (VS Code)",
     detect: () =>
-      existsSync(
-        join(
-          HOME,
-          "Library",
-          "Application Support",
-          "Code",
-          "User",
-          "globalStorage",
-          "saoudrizwan.claude-dev",
-          "settings"
-        )
-      ),
+      existsSync(join(vscodeDataDir(), "saoudrizwan.claude-dev", "settings")),
     configType: "json",
     configPath: join(
-      HOME,
-      "Library",
-      "Application Support",
-      "Code",
-      "User",
-      "globalStorage",
+      vscodeDataDir(),
       "saoudrizwan.claude-dev",
       "settings",
       "cline_mcp_settings.json"
@@ -672,7 +680,7 @@ async function runReindex() {
     process.exit(1);
   }
 
-  const db = initDatabase(config.dbPath);
+  const db = await initDatabase(config.dbPath);
   const stmts = prepareStatements(db);
   const ctx = {
     db,
@@ -701,7 +709,7 @@ async function runStatus() {
   const { gatherVaultStatus } = await import("@context-vault/core/core/status");
 
   const config = resolveConfig();
-  const db = initDatabase(config.dbPath);
+  const db = await initDatabase(config.dbPath);
 
   const status = gatherVaultStatus({ db, config });
 

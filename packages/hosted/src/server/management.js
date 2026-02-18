@@ -18,6 +18,8 @@ import {
 import { createCheckoutSession, verifyWebhookEvent, getTierLimits, isOverEntryLimit } from "../billing/stripe.js";
 import { writeEntry } from "@context-vault/core/capture";
 import { indexEntry } from "@context-vault/core/index";
+import { generateDek } from "../encryption/keys.js";
+import { decryptFromStorage } from "../encryption/vault-crypto.js";
 
 // ─── Validation Constants ────────────────────────────────────────────────────
 
@@ -158,14 +160,35 @@ export function createManagementRoutes(ctx) {
     if (existing) return c.json({ error: "User already exists" }, 409);
 
     const userId = randomUUID();
-    stmts.createUser.run(userId, email, name || null, "free");
-
-    // Generate first API key
     const rawKey = generateApiKey();
     const hash = hashApiKey(rawKey);
     const prefix = keyPrefix(rawKey);
     const keyId = randomUUID();
-    stmts.createApiKey.run(keyId, userId, hash, prefix, "default");
+    const masterSecret = process.env.VAULT_MASTER_SECRET;
+
+    // Wrap all inserts in a transaction to prevent broken user state
+    // (e.g. user created without DEK or API key if a step fails mid-way)
+    const registerUser = getMetaDb().transaction(() => {
+      stmts.createUser.run(userId, email, name || null, "free");
+      if (masterSecret) {
+        const { encryptedDek, dekSalt } = generateDek(masterSecret);
+        stmts.updateUserDek.run(encryptedDek, dekSalt, userId);
+      }
+      stmts.createApiKey.run(keyId, userId, hash, prefix, "default");
+    });
+
+    try {
+      registerUser();
+    } catch (err) {
+      console.error(JSON.stringify({
+        level: "error",
+        context: "registration",
+        email,
+        error: err.message,
+        ts: new Date().toISOString(),
+      }));
+      return c.json({ error: "Registration failed. Please try again." }, 500);
+    }
 
     return c.json({
       userId,
@@ -318,8 +341,8 @@ export function createManagementRoutes(ctx) {
       }
     }
 
-    // ── Entry limit enforcement ───────────────────────────────────────────
-    const { c: entryCount } = ctx.db.prepare("SELECT COUNT(*) as c FROM vault").get();
+    // ── Entry limit enforcement (per-user) ─────────────────────────────────
+    const { c: entryCount } = ctx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ?").get(user.userId);
     if (isOverEntryLimit(user.tier, entryCount)) {
       return c.json({ error: "Entry limit reached. Upgrade to Pro." }, 403);
     }
@@ -333,6 +356,7 @@ export function createManagementRoutes(ctx) {
       source: data.source,
       identity_key: data.identity_key,
       expires_at: data.expires_at,
+      userId: user.userId,
     });
 
     await indexEntry(ctx, entry);
@@ -351,21 +375,34 @@ export function createManagementRoutes(ctx) {
     }
 
     const rows = ctx.db.prepare(
-      `SELECT id, kind, title, body, tags, source, created_at, identity_key, expires_at, meta FROM vault ORDER BY created_at ASC`
-    ).all();
+      `SELECT id, kind, title, body, tags, source, created_at, identity_key, expires_at, meta, body_encrypted, title_encrypted, meta_encrypted, iv FROM vault WHERE user_id = ? ORDER BY created_at ASC`
+    ).all(user.userId);
 
-    const entries = rows.map((row) => ({
-      id: row.id,
-      kind: row.kind,
-      title: row.title,
-      body: row.body,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      source: row.source,
-      created_at: row.created_at,
-      identity_key: row.identity_key || null,
-      expires_at: row.expires_at || null,
-      meta: row.meta ? JSON.parse(row.meta) : {},
-    }));
+    const masterSecret = process.env.VAULT_MASTER_SECRET;
+    const entries = rows.map((row) => {
+      let { title, body, meta } = row;
+
+      // Decrypt encrypted entries for export
+      if (masterSecret && row.body_encrypted) {
+        const decrypted = decryptFromStorage(row, user.userId, masterSecret);
+        body = decrypted.body;
+        if (decrypted.title) title = decrypted.title;
+        meta = decrypted.meta ? JSON.stringify(decrypted.meta) : row.meta;
+      }
+
+      return {
+        id: row.id,
+        kind: row.kind,
+        title,
+        body,
+        tags: row.tags ? JSON.parse(row.tags) : [],
+        source: row.source,
+        created_at: row.created_at,
+        identity_key: row.identity_key || null,
+        expires_at: row.expires_at || null,
+        meta: meta ? (typeof meta === "string" ? JSON.parse(meta) : meta) : {},
+      };
+    });
 
     return c.json({ entries });
   });

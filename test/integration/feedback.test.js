@@ -8,8 +8,8 @@ import { hybridSearch } from "@context-vault/core/retrieve";
 describe("feedback kind roundtrip", () => {
   let ctx, cleanup;
 
-  beforeAll(() => {
-    ({ ctx, cleanup } = createTestCtx());
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
   }, 30000);
 
   afterAll(() => cleanup());

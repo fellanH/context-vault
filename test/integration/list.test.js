@@ -7,7 +7,7 @@ describe("list_context queries", () => {
   let ctx, cleanup;
 
   beforeAll(async () => {
-    ({ ctx, cleanup } = createTestCtx());
+    ({ ctx, cleanup } = await createTestCtx());
 
     // Seed with entries of different kinds and categories
     await captureAndIndex(ctx, { kind: "insight", title: "React hooks tip", body: "Use useCallback for stable references", tags: ["react"], source: "test" }, indexEntry);

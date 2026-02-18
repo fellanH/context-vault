@@ -14,7 +14,7 @@ import { existsSync, mkdirSync } from "node:fs";
  * Build the shared ctx object used by all tool handlers.
  * @returns {{ db, config, stmts, embed, insertVec, deleteVec }}
  */
-export function createCtx() {
+export async function createCtx() {
   const config = resolveConfig();
 
   // Ensure directories exist
@@ -22,7 +22,7 @@ export function createCtx() {
   mkdirSync(config.vaultDir, { recursive: true });
   config.vaultDirExists = existsSync(config.vaultDir);
 
-  const db = initDatabase(config.dbPath);
+  const db = await initDatabase(config.dbPath);
   const stmts = prepareStatements(db);
 
   return {

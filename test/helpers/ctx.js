@@ -8,13 +8,13 @@ import { tmpdir } from "node:os";
 import { initDatabase, prepareStatements, insertVec, deleteVec } from "@context-vault/core/index/db";
 import { embed } from "@context-vault/core/index/embed";
 
-export function createTestCtx() {
+export async function createTestCtx() {
   const tmp = mkdtempSync(join(tmpdir(), "context-mcp-test-"));
   const vaultDir = join(tmp, "vault");
   const dbPath = join(tmp, "vault.db");
   mkdirSync(vaultDir, { recursive: true });
 
-  const db = initDatabase(dbPath);
+  const db = await initDatabase(dbPath);
   const stmts = prepareStatements(db);
 
   const config = {

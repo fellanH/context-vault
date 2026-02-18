@@ -44,7 +44,14 @@ export function rateLimit() {
     // Check daily request limit for free tier
     if (limits.requestsPerDay !== Infinity) {
       const count = stmts.countUsageToday.get(user.userId, "mcp_request");
+      const remaining = Math.max(0, limits.requestsPerDay - count.c);
+
       if (count.c >= limits.requestsPerDay) {
+        const resetDate = new Date();
+        resetDate.setUTCHours(24, 0, 0, 0);
+        c.header("X-RateLimit-Limit", String(limits.requestsPerDay));
+        c.header("X-RateLimit-Remaining", "0");
+        c.header("X-RateLimit-Reset", String(Math.floor(resetDate.getTime() / 1000)));
         return c.json(
           {
             error: `Daily request limit reached (${limits.requestsPerDay}/day). Upgrade to Pro for unlimited usage.`,
@@ -53,6 +60,13 @@ export function rateLimit() {
           429
         );
       }
+
+      // Set rate limit headers for successful requests
+      const resetDate = new Date();
+      resetDate.setUTCHours(24, 0, 0, 0);
+      c.header("X-RateLimit-Limit", String(limits.requestsPerDay));
+      c.header("X-RateLimit-Remaining", String(remaining - 1));
+      c.header("X-RateLimit-Reset", String(Math.floor(resetDate.getTime() / 1000)));
     }
 
     // Log usage (before processing — count the attempt)

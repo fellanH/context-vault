@@ -95,9 +95,11 @@ export async function indexEntry(ctx, { id, kind, category, title, body, meta, t
   const embeddingText = [title, body].filter(Boolean).join(" ");
   const embedding = await ctx.embed(embeddingText);
 
-  // Upsert vec: delete old if exists, then insert new
-  try { ctx.deleteVec(rowid); } catch { /* no-op if not found */ }
-  ctx.insertVec(rowid, embedding);
+  // Upsert vec: delete old if exists, then insert new (skip if embedding unavailable)
+  if (embedding) {
+    try { ctx.deleteVec(rowid); } catch { /* no-op if not found */ }
+    ctx.insertVec(rowid, embedding);
+  }
 }
 
 /**
@@ -243,12 +245,14 @@ export async function reindex(ctx, opts = {}) {
       }
     }
 
-    // P4: Batch embed all pending texts
+    // P4: Batch embed all pending texts (skip nulls if embedding unavailable)
     for (let i = 0; i < pendingEmbeds.length; i += EMBED_BATCH_SIZE) {
       const batch = pendingEmbeds.slice(i, i + EMBED_BATCH_SIZE);
       const embeddings = await embedBatch(batch.map((e) => e.text));
       for (let j = 0; j < batch.length; j++) {
-        ctx.insertVec(batch[j].rowid, embeddings[j]);
+        if (embeddings[j]) {
+          ctx.insertVec(batch[j].rowid, embeddings[j]);
+        }
       }
     }
 
