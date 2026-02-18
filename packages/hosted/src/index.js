@@ -18,6 +18,7 @@ import { serve } from "@hono/node-server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { join } from "node:path";
+import { writeFileSync, unlinkSync } from "node:fs";
 import { registerTools } from "@context-vault/core/server/tools";
 import { createCtx } from "./server/ctx.js";
 import { initMetaDb, prepareMetaStatements } from "./auth/meta-db.js";
@@ -29,11 +30,38 @@ import { createManagementRoutes } from "./server/management.js";
 
 const AUTH_REQUIRED = process.env.AUTH_REQUIRED === "true";
 
+// ─── Startup Validation ─────────────────────────────────────────────────────
+
+function validateEnv(config) {
+  if (AUTH_REQUIRED) {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      console.warn("[hosted] \u26a0 STRIPE_SECRET_KEY not set — billing disabled");
+    }
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      console.warn("[hosted] \u26a0 STRIPE_WEBHOOK_SECRET not set — webhooks disabled");
+    }
+    if (!process.env.STRIPE_PRICE_PRO) {
+      console.warn("[hosted] \u26a0 STRIPE_PRICE_PRO not set — checkout disabled");
+    }
+  }
+
+  // Verify vault dir is writable
+  try {
+    const probe = join(config.vaultDir, ".write-test");
+    writeFileSync(probe, "");
+    unlinkSync(probe);
+  } catch (err) {
+    console.error(`[hosted] \u26a0 Vault dir not writable: ${config.vaultDir} — ${err.message}`);
+  }
+}
+
 // ─── Shared Context (initialized once at startup) ───────────────────────────
 
 const ctx = createCtx();
 console.log(`[hosted] Vault: ${ctx.config.vaultDir}`);
 console.log(`[hosted] Database: ${ctx.config.dbPath}`);
+
+validateEnv(ctx.config);
 
 // Initialize meta database for auth and usage tracking
 const metaDbPath = join(ctx.config.dataDir, "meta.db");

@@ -19,6 +19,10 @@ const SERVER_ENTRY = resolve(import.meta.dirname, "../../packages/hosted/src/ind
 // Use unique email prefix per run to avoid collisions
 const RUN_ID = Date.now().toString(36);
 
+// Each test gets a unique IP via X-Forwarded-For to avoid cross-test rate limiting
+let ipCounter = 0;
+function uniqueIp() { return `10.0.${Math.floor(++ipCounter / 256)}.${ipCounter % 256}`; }
+
 describe("hosted auth + management API", () => {
   let serverProcess;
   let tmpDir;
@@ -85,7 +89,7 @@ describe("hosted auth + management API", () => {
   it("registers a user and gets an API key", async () => {
     const res = await fetch(`${BASE}/api/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
       body: JSON.stringify({ email: `reg-${RUN_ID}@test.com`, name: "Test User" }),
     });
     expect(res.status).toBe(201);
@@ -98,7 +102,7 @@ describe("hosted auth + management API", () => {
   it("rejects duplicate registration", async () => {
     const res = await fetch(`${BASE}/api/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
       body: JSON.stringify({ email: `reg-${RUN_ID}@test.com` }),
     });
     expect(res.status).toBe(409);
@@ -108,7 +112,7 @@ describe("hosted auth + management API", () => {
     // Register
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
       body: JSON.stringify({ email: `flow-${RUN_ID}@test.com` }),
     });
     const { apiKey } = await regRes.json();
@@ -135,7 +139,7 @@ describe("hosted auth + management API", () => {
   it("key management: list and create keys", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
       body: JSON.stringify({ email: `keys-${RUN_ID}@test.com` }),
     });
     const { apiKey } = await regRes.json();
@@ -181,7 +185,7 @@ describe("hosted auth + management API", () => {
   it("import: valid entry returns id", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
       body: JSON.stringify({ email: `import-${RUN_ID}@test.com` }),
     });
     const { apiKey } = await regRes.json();
@@ -201,7 +205,7 @@ describe("hosted auth + management API", () => {
   it("import: missing body returns 400", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
       body: JSON.stringify({ email: `import-nobody-${RUN_ID}@test.com` }),
     });
     const { apiKey } = await regRes.json();
@@ -220,7 +224,7 @@ describe("hosted auth + management API", () => {
   it("import: missing kind returns 400", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
       body: JSON.stringify({ email: `import-nokind-${RUN_ID}@test.com` }),
     });
     const { apiKey } = await regRes.json();
@@ -239,7 +243,7 @@ describe("hosted auth + management API", () => {
   it("export: free tier returns 403", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
       body: JSON.stringify({ email: `export-free-${RUN_ID}@test.com` }),
     });
     const { apiKey } = await regRes.json();
@@ -255,7 +259,7 @@ describe("hosted auth + management API", () => {
   it("usage tracking endpoint returns data", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
       body: JSON.stringify({ email: `usage-${RUN_ID}@test.com` }),
     });
     const { apiKey } = await regRes.json();
@@ -267,5 +271,89 @@ describe("hosted auth + management API", () => {
     const data = await res.json();
     expect(data.tier).toBe("free");
     expect(data.usage.requestsToday).toBeDefined();
+  });
+
+  // ─── Phase 2: Input Validation ─────────────────────────────────────────────
+
+  it("import: body >100KB returns 400", async () => {
+    const regRes = await fetch(`${BASE}/api/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
+      body: JSON.stringify({ email: `val-bigbody-${RUN_ID}@test.com` }),
+    });
+    const { apiKey } = await regRes.json();
+    const authHeaders = { Authorization: `Bearer ${apiKey.key}`, "Content-Type": "application/json" };
+
+    const bigBody = "x".repeat(101 * 1024);
+    const res = await fetch(`${BASE}/api/vault/import`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ kind: "insight", body: bigBody }),
+    });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("100KB");
+  });
+
+  it("import: non-array tags returns 400", async () => {
+    const regRes = await fetch(`${BASE}/api/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
+      body: JSON.stringify({ email: `val-tags-${RUN_ID}@test.com` }),
+    });
+    const { apiKey } = await regRes.json();
+    const authHeaders = { Authorization: `Bearer ${apiKey.key}`, "Content-Type": "application/json" };
+
+    const res = await fetch(`${BASE}/api/vault/import`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ kind: "insight", body: "test", tags: "not-an-array" }),
+    });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("tags");
+  });
+
+  it("import: invalid kind format returns 400", async () => {
+    const regRes = await fetch(`${BASE}/api/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
+      body: JSON.stringify({ email: `val-kind-${RUN_ID}@test.com` }),
+    });
+    const { apiKey } = await regRes.json();
+    const authHeaders = { Authorization: `Bearer ${apiKey.key}`, "Content-Type": "application/json" };
+
+    const res = await fetch(`${BASE}/api/vault/import`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ kind: "INVALID KIND!!", body: "test" }),
+    });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("kind");
+  });
+
+  // ─── Phase 2: Registration Rate Limiting ───────────────────────────────────
+
+  it("registration: 6th attempt from same IP returns 429", async () => {
+    // Use a dedicated IP so this test's rate limit is independent of others
+    const rateLimitIp = `192.168.99.${RUN_ID.slice(-2) || "1"}`;
+    const results = [];
+
+    for (let i = 0; i < 7; i++) {
+      const res = await fetch(`${BASE}/api/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Forwarded-For": rateLimitIp,
+        },
+        body: JSON.stringify({ email: `ratelimit-${i}-${RUN_ID}@test.com` }),
+      });
+      results.push(res.status);
+      if (res.status === 429) break;
+    }
+    // First 5 should succeed (201) or conflict (409), 6th should be 429
+    expect(results).toContain(429);
+    expect(results.filter((s) => s === 429).length).toBe(1);
   });
 });

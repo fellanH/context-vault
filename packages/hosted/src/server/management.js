@@ -15,9 +15,60 @@ import {
   getMetaDb,
   validateApiKey,
 } from "../auth/meta-db.js";
-import { createCheckoutSession, verifyWebhookEvent, getTierLimits } from "../billing/stripe.js";
+import { createCheckoutSession, verifyWebhookEvent, getTierLimits, isOverEntryLimit } from "../billing/stripe.js";
 import { writeEntry } from "@context-vault/core/capture";
 import { indexEntry } from "@context-vault/core/index";
+
+// ─── Validation Constants ────────────────────────────────────────────────────
+
+const MAX_BODY_LENGTH = 100 * 1024; // 100KB
+const MAX_TITLE_LENGTH = 500;
+const MAX_KIND_LENGTH = 64;
+const MAX_TAG_LENGTH = 100;
+const MAX_TAGS_COUNT = 20;
+const MAX_META_LENGTH = 10 * 1024; // 10KB
+const MAX_SOURCE_LENGTH = 200;
+const MAX_IDENTITY_KEY_LENGTH = 200;
+const KIND_PATTERN = /^[a-z0-9-]+$/;
+
+// ─── Registration Rate Limiting ──────────────────────────────────────────────
+
+const registrationAttempts = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const RATE_LIMIT_MAX = 5;
+
+function getClientIp(c) {
+  return c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
+    || c.req.header("x-real-ip")
+    || "unknown";
+}
+
+function checkRegistrationRate(ip) {
+  const now = Date.now();
+  const entry = registrationAttempts.get(ip);
+
+  // Clean expired
+  if (entry && now > entry.resetAt) {
+    registrationAttempts.delete(ip);
+  }
+
+  const current = registrationAttempts.get(ip);
+  if (current && current.count >= RATE_LIMIT_MAX) {
+    return false;
+  }
+
+  if (current) {
+    current.count++;
+  } else {
+    registrationAttempts.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+  }
+  return true;
+}
+
+/** Exported for testing — resets the in-memory rate limit state. */
+export function _resetRateLimits() {
+  registrationAttempts.clear();
+}
 
 /**
  * Create management API routes with access to the vault context.
@@ -91,6 +142,11 @@ export function createManagementRoutes(ctx) {
 
   /** Register a new user and return their first API key */
   api.post("/api/register", async (c) => {
+    const ip = getClientIp(c);
+    if (!checkRegistrationRate(ip)) {
+      return c.json({ error: "Too many registration attempts. Try again later." }, 429);
+    }
+
     const body = await c.req.json().catch(() => ({}));
     const { email, name } = body;
     if (!email) return c.json({ error: "email is required" }, 400);
@@ -219,6 +275,54 @@ export function createManagementRoutes(ctx) {
     if (!data) return c.json({ error: "Invalid JSON body" }, 400);
     if (!data.body) return c.json({ error: "body is required" }, 400);
     if (!data.kind) return c.json({ error: "kind is required" }, 400);
+
+    // ── Input validation ──────────────────────────────────────────────────
+    if (typeof data.kind !== "string" || data.kind.length > MAX_KIND_LENGTH || !KIND_PATTERN.test(data.kind)) {
+      return c.json({ error: `kind must be lowercase alphanumeric/hyphens, max ${MAX_KIND_LENGTH} chars` }, 400);
+    }
+    if (typeof data.body !== "string" || data.body.length > MAX_BODY_LENGTH) {
+      return c.json({ error: `body must be a string, max ${MAX_BODY_LENGTH / 1024}KB` }, 400);
+    }
+    if (data.title !== undefined && data.title !== null) {
+      if (typeof data.title !== "string" || data.title.length > MAX_TITLE_LENGTH) {
+        return c.json({ error: `title must be a string, max ${MAX_TITLE_LENGTH} chars` }, 400);
+      }
+    }
+    if (data.tags !== undefined && data.tags !== null) {
+      if (!Array.isArray(data.tags)) {
+        return c.json({ error: "tags must be an array of strings" }, 400);
+      }
+      if (data.tags.length > MAX_TAGS_COUNT) {
+        return c.json({ error: `tags: max ${MAX_TAGS_COUNT} tags allowed` }, 400);
+      }
+      for (const tag of data.tags) {
+        if (typeof tag !== "string" || tag.length > MAX_TAG_LENGTH) {
+          return c.json({ error: `each tag must be a string, max ${MAX_TAG_LENGTH} chars` }, 400);
+        }
+      }
+    }
+    if (data.meta !== undefined && data.meta !== null) {
+      const metaStr = JSON.stringify(data.meta);
+      if (metaStr.length > MAX_META_LENGTH) {
+        return c.json({ error: `meta must be under ${MAX_META_LENGTH / 1024}KB when serialized` }, 400);
+      }
+    }
+    if (data.source !== undefined && data.source !== null) {
+      if (typeof data.source !== "string" || data.source.length > MAX_SOURCE_LENGTH) {
+        return c.json({ error: `source must be a string, max ${MAX_SOURCE_LENGTH} chars` }, 400);
+      }
+    }
+    if (data.identity_key !== undefined && data.identity_key !== null) {
+      if (typeof data.identity_key !== "string" || data.identity_key.length > MAX_IDENTITY_KEY_LENGTH) {
+        return c.json({ error: `identity_key must be a string, max ${MAX_IDENTITY_KEY_LENGTH} chars` }, 400);
+      }
+    }
+
+    // ── Entry limit enforcement ───────────────────────────────────────────
+    const { c: entryCount } = ctx.db.prepare("SELECT COUNT(*) as c FROM vault").get();
+    if (isOverEntryLimit(user.tier, entryCount)) {
+      return c.json({ error: "Entry limit reached. Upgrade to Pro." }, 403);
+    }
 
     const entry = writeEntry(ctx, {
       kind: data.kind,
