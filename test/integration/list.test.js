@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createTestCtx } from "../helpers/ctx.js";
-import { captureAndIndex } from "../../src/capture/index.js";
-import { indexEntry } from "../../src/index/index.js";
+import { captureAndIndex } from "@context-vault/core/capture";
+import { indexEntry } from "@context-vault/core/index";
 
 describe("list_context queries", () => {
   let ctx, cleanup;

@@ -1,0 +1,36 @@
+{
+  "name": "@context-vault/core",
+  "version": "2.3.0",
+  "type": "module",
+  "description": "Shared core: capture, index, retrieve, tools, and utilities for context-vault",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./capture": "./src/capture/index.js",
+    "./capture/formatters": "./src/capture/formatters.js",
+    "./capture/file-ops": "./src/capture/file-ops.js",
+    "./index/db": "./src/index/db.js",
+    "./index/embed": "./src/index/embed.js",
+    "./index": "./src/index/index.js",
+    "./retrieve": "./src/retrieve/index.js",
+    "./server/tools": "./src/server/tools.js",
+    "./server/helpers": "./src/server/helpers.js",
+    "./core/categories": "./src/core/categories.js",
+    "./core/config": "./src/core/config.js",
+    "./core/files": "./src/core/files.js",
+    "./core/frontmatter": "./src/core/frontmatter.js",
+    "./core/status": "./src/core/status.js"
+  },
+  "files": ["src/"],
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "author": "Felix Hellstrom",
+  "repository": { "type": "git", "url": "git+https://github.com/fellanH/context-mcp.git", "directory": "packages/core" },
+  "homepage": "https://github.com/fellanH/context-mcp",
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "better-sqlite3": "^12.6.2",
+    "sqlite-vec": "^0.1.0"
+  }
+}

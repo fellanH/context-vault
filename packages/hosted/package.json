@@ -1,0 +1,20 @@
+{
+  "name": "@context-vault/hosted",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hosted context-vault: Hono HTTP server with Turso storage, auth, and billing",
+  "main": "src/index.js",
+  "license": "BSL-1.1",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@context-vault/core": "^2.3.0",
+    "@hono/node-server": "^1.13.0",
+    "@libsql/client": "^0.14.0",
+    "hono": "^4.7.0"
+  }
+}

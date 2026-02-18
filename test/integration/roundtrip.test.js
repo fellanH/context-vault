@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { createTestCtx } from "../helpers/ctx.js";
-import { captureAndIndex, updateEntryFile } from "../../src/capture/index.js";
-import { indexEntry } from "../../src/index/index.js";
-import { hybridSearch } from "../../src/retrieve/index.js";
+import { captureAndIndex, updateEntryFile } from "@context-vault/core/capture";
+import { indexEntry } from "@context-vault/core/index";
+import { hybridSearch } from "@context-vault/core/retrieve";
 
 describe("save → search → list → update → delete roundtrip", () => {
   let ctx, cleanup;

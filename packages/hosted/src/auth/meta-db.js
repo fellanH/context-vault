@@ -1,0 +1,143 @@
+/**
+ * meta-db.js — Shared meta database for users, API keys, and usage tracking.
+ *
+ * Uses better-sqlite3 (same driver as vault DB).
+ * In production, this would be a Turso database shared across instances.
+ * For now, uses a local SQLite file at ~/.context-mcp/meta.db.
+ */
+
+import Database from "better-sqlite3";
+import { randomBytes, createHash } from "node:crypto";
+
+const META_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS users (
+    id              TEXT PRIMARY KEY,
+    email           TEXT UNIQUE NOT NULL,
+    name            TEXT,
+    tier            TEXT NOT NULL DEFAULT 'free',
+    stripe_customer_id TEXT,
+    vault_db_url    TEXT,
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS api_keys (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES users(id),
+    key_hash        TEXT UNIQUE NOT NULL,
+    key_prefix      TEXT NOT NULL,
+    name            TEXT NOT NULL DEFAULT 'default',
+    scopes          TEXT DEFAULT '["*"]',
+    last_used       TEXT,
+    expires_at      TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+  CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+
+  CREATE TABLE IF NOT EXISTS usage_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT NOT NULL,
+    operation       TEXT NOT NULL,
+    timestamp       TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_usage_user_ts ON usage_log(user_id, timestamp);
+`;
+
+let metaDb = null;
+
+/**
+ * Initialize the meta database.
+ * @param {string} dbPath
+ * @returns {import("better-sqlite3").Database}
+ */
+export function initMetaDb(dbPath) {
+  if (metaDb) return metaDb;
+  metaDb = new Database(dbPath);
+  metaDb.pragma("journal_mode = WAL");
+  metaDb.pragma("foreign_keys = ON");
+  metaDb.exec(META_SCHEMA);
+  return metaDb;
+}
+
+/**
+ * Get the meta database instance.
+ */
+export function getMetaDb() {
+  if (!metaDb) throw new Error("Meta DB not initialized. Call initMetaDb first.");
+  return metaDb;
+}
+
+// ─── API Key Helpers ────────────────────────────────────────────────────────
+
+/** Generate a new API key: cv_<random 40 hex chars> */
+export function generateApiKey() {
+  const raw = randomBytes(20).toString("hex");
+  return `cv_${raw}`;
+}
+
+/** Hash an API key for storage (SHA-256). */
+export function hashApiKey(key) {
+  return createHash("sha256").update(key).digest("hex");
+}
+
+/** Extract prefix for display: cv_abc1...ef23 */
+export function keyPrefix(key) {
+  return key.slice(0, 7) + "..." + key.slice(-4);
+}
+
+// ─── Prepared Statements ────────────────────────────────────────────────────
+
+let stmts = null;
+
+export function prepareMetaStatements(db) {
+  if (stmts) return stmts;
+  stmts = {
+    // Users
+    createUser: db.prepare(`INSERT INTO users (id, email, name, tier) VALUES (?, ?, ?, ?)`),
+    getUserById: db.prepare(`SELECT * FROM users WHERE id = ?`),
+    getUserByEmail: db.prepare(`SELECT * FROM users WHERE email = ?`),
+    updateUserTier: db.prepare(`UPDATE users SET tier = ?, updated_at = datetime('now') WHERE id = ?`),
+
+    // API Keys
+    createApiKey: db.prepare(`INSERT INTO api_keys (id, user_id, key_hash, key_prefix, name) VALUES (?, ?, ?, ?, ?)`),
+    getKeyByHash: db.prepare(`SELECT ak.*, u.tier, u.email FROM api_keys ak JOIN users u ON ak.user_id = u.id WHERE ak.key_hash = ?`),
+    updateKeyLastUsed: db.prepare(`UPDATE api_keys SET last_used = datetime('now') WHERE id = ?`),
+    listUserKeys: db.prepare(`SELECT id, key_prefix, name, scopes, last_used, expires_at, created_at FROM api_keys WHERE user_id = ? ORDER BY created_at DESC`),
+    deleteApiKey: db.prepare(`DELETE FROM api_keys WHERE id = ? AND user_id = ?`),
+
+    // Usage
+    logUsage: db.prepare(`INSERT INTO usage_log (user_id, operation) VALUES (?, ?)`),
+    countUsageToday: db.prepare(`SELECT COUNT(*) as c FROM usage_log WHERE user_id = ? AND operation = ? AND timestamp >= date('now')`),
+    countEntries: db.prepare(`SELECT COUNT(*) as c FROM usage_log WHERE user_id = ? AND operation = 'save_context'`),
+  };
+  return stmts;
+}
+
+/**
+ * Validate an API key and return the associated user+key info.
+ * Returns null if invalid.
+ */
+export function validateApiKey(key) {
+  if (!key || !key.startsWith("cv_")) return null;
+  const hash = hashApiKey(key);
+  const s = prepareMetaStatements(getMetaDb());
+  const row = s.getKeyByHash.get(hash);
+  if (!row) return null;
+
+  // Check expiry
+  if (row.expires_at && new Date(row.expires_at) < new Date()) return null;
+
+  // Update last used (fire-and-forget)
+  try { s.updateKeyLastUsed.run(row.id); } catch {}
+
+  return {
+    keyId: row.id,
+    userId: row.user_id,
+    email: row.email,
+    tier: row.tier,
+    scopes: JSON.parse(row.scopes || '["*"]'),
+  };
+}

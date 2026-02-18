@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { categoryFor, categoryDirFor, CATEGORY_DIRS } from "../../src/core/categories.js";
+import { categoryFor, categoryDirFor, CATEGORY_DIRS } from "@context-vault/core/core/categories";
 
 describe("categoryFor", () => {
   it("returns knowledge for knowledge kinds", () => {

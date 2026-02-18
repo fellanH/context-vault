@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { slugify, normalizeKind, kindToDir, dirToKind, kindToPath } from "../../src/core/files.js";
+import { slugify, normalizeKind, kindToDir, dirToKind, kindToPath } from "@context-vault/core/core/files";
 
 describe("slugify", () => {
   it("lowercases and replaces non-alphanumeric with dashes", () => {

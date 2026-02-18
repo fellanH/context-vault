@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatFrontmatter, parseFrontmatter, extractCustomMeta } from "../../src/core/frontmatter.js";
+import { formatFrontmatter, parseFrontmatter, extractCustomMeta } from "@context-vault/core/core/frontmatter";
 
 describe("formatFrontmatter + parseFrontmatter roundtrip", () => {
   it("roundtrips simple scalar fields", () => {

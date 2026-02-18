@@ -5,8 +5,8 @@
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { initDatabase, prepareStatements, insertVec, deleteVec } from "../../src/index/db.js";
-import { embed } from "../../src/index/embed.js";
+import { initDatabase, prepareStatements, insertVec, deleteVec } from "@context-vault/core/index/db";
+import { embed } from "@context-vault/core/index/embed";
 
 export function createTestCtx() {
   const tmp = mkdtempSync(join(tmpdir(), "context-mcp-test-"));
