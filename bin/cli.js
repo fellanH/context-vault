@@ -168,6 +168,8 @@ ${bold("Commands:")}
   ${cyan("ui")} [--port 3141]      Launch web dashboard
   ${cyan("reindex")}               Rebuild search index from knowledge files
   ${cyan("status")}                Show vault diagnostics
+  ${cyan("update")}                Check for and install updates
+  ${cyan("uninstall")}             Remove MCP configs and optionally data
 
 ${bold("Options:")}
   --help                Show this help
@@ -184,6 +186,102 @@ async function runSetup() {
   console.log(`  ${bold("◇ context-vault")} ${dim(`v${VERSION}`)}`);
   console.log(dim("  Persistent memory for AI agents"));
   console.log();
+
+  // Check for existing installation
+  const existingConfig = join(HOME, ".context-mcp", "config.json");
+  if (existsSync(existingConfig) && !isNonInteractive) {
+    let existingVault = "(unknown)";
+    try {
+      const cfg = JSON.parse(readFileSync(existingConfig, "utf-8"));
+      existingVault = cfg.vaultDir || existingVault;
+    } catch {}
+
+    console.log(yellow(`  Existing installation detected`));
+    console.log(dim(`  Vault: ${existingVault}`));
+    console.log(dim(`  Config: ${existingConfig}`));
+    console.log();
+    console.log(`    1) Full reconfigure`);
+    console.log(`    2) Update tool configs only ${dim("(skip vault setup)")}`);
+    console.log(`    3) Cancel`);
+    console.log();
+    const choice = await prompt("  Select:", "1");
+
+    if (choice === "3") {
+      console.log(dim("  Cancelled."));
+      return;
+    }
+
+    if (choice === "2") {
+      // Skip vault setup, just reconfigure tools
+      console.log();
+      console.log(dim(`  [1/2]`) + bold(" Detecting tools...\n"));
+      const detected = [];
+      for (const tool of TOOLS) {
+        const found = tool.detect();
+        if (found) {
+          detected.push(tool);
+          console.log(`  ${green("+")} ${tool.name}`);
+        } else {
+          console.log(`  ${dim("-")} ${dim(tool.name)} ${dim("(not found)")}`);
+        }
+      }
+      console.log();
+
+      if (detected.length === 0) {
+        console.log(yellow("  No supported tools detected."));
+        return;
+      }
+
+      let selected;
+      console.log(bold("  Which tools should context-mcp connect to?\n"));
+      for (let i = 0; i < detected.length; i++) {
+        console.log(`    ${i + 1}) ${detected[i].name}`);
+      }
+      console.log();
+      const answer = await prompt(
+        `  Select (${dim("1,2,3")} or ${dim('"all"')}):`,
+        "all"
+      );
+      if (answer === "all" || answer === "") {
+        selected = detected;
+      } else {
+        const nums = answer.split(/[,\s]+/).map((n) => parseInt(n, 10) - 1).filter((n) => n >= 0 && n < detected.length);
+        selected = nums.map((n) => detected[n]);
+        if (selected.length === 0) selected = detected;
+      }
+
+      // Read vault dir from existing config
+      let customVaultDir = null;
+      try {
+        const cfg = JSON.parse(readFileSync(existingConfig, "utf-8"));
+        const defaultVDir = join(HOME, "vault");
+        if (cfg.vaultDir && resolve(cfg.vaultDir) !== resolve(defaultVDir)) {
+          customVaultDir = cfg.vaultDir;
+        }
+      } catch {}
+
+      console.log(`\n  ${dim("[2/2]")}${bold(" Configuring tools...\n")}`);
+      for (const tool of selected) {
+        try {
+          if (tool.configType === "cli") {
+            await configureClaude(tool, customVaultDir);
+          } else {
+            configureJsonTool(tool, customVaultDir);
+          }
+          console.log(`  ${green("+")} ${tool.name} — configured`);
+        } catch (e) {
+          console.log(`  ${red("x")} ${tool.name} — ${e.message}`);
+        }
+      }
+
+      console.log();
+      console.log(green("  ✓ Tool configs updated."));
+      console.log();
+      return;
+    }
+    // choice === "1" falls through to full setup below
+    console.log();
+  }
 
   // Detect tools
   console.log(dim(`  [1/5]`) + bold(" Detecting tools...\n"));
@@ -340,9 +438,9 @@ async function runSetup() {
   }
 
   // Seed entry
-  const seeded = createSeedEntry(resolvedVaultDir);
-  if (seeded) {
-    console.log(`\n  ${green("+")} Created starter entry in vault`);
+  const seeded = createSeedEntries(resolvedVaultDir);
+  if (seeded > 0) {
+    console.log(`\n  ${green("+")} Created ${seeded} starter ${seeded === 1 ? "entry" : "entries"} in vault`);
   }
 
   // Offer to launch UI
@@ -377,8 +475,15 @@ async function runSetup() {
   const boxLines = [
     `  ✓ Setup complete — ${passed}/${checks.length} checks passed`,
     ``,
-    `  Open ${toolName} and try:`,
+    `  ${bold("AI Tools")} — open ${toolName} and try:`,
     `  "Search my vault for getting started"`,
+    `  "Save an insight about [topic]"`,
+    `  "Show my vault status"`,
+    ``,
+    `  ${bold("CLI Commands:")}`,
+    `  context-mcp status    Show vault health`,
+    `  context-mcp ui        Launch web dashboard`,
+    `  context-mcp update    Check for updates`,
   ];
   const innerWidth = Math.max(...boxLines.map((l) => l.length)) + 2;
   const pad = (s) => s + " ".repeat(Math.max(0, innerWidth - s.length));
@@ -466,18 +571,21 @@ function configureJsonTool(tool, vaultDir) {
   writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
 }
 
-// ─── Seed Entry ─────────────────────────────────────────────────────────────
+// ─── Seed Entries ────────────────────────────────────────────────────────────
 
-function createSeedEntry(vaultDir) {
-  const seedDir = join(vaultDir, "knowledge", "insights");
-  const seedPath = join(seedDir, "getting-started.md");
-  if (existsSync(seedPath)) return false;
-  mkdirSync(seedDir, { recursive: true });
-  const id = Date.now().toString(36).toUpperCase().padStart(10, "0");
-  const now = new Date().toISOString();
-  const content = `---
-id: ${id}
-tags: ["getting-started"]
+function createSeedEntries(vaultDir) {
+  let created = 0;
+
+  // Entry 1: Getting started (improved)
+  const insightDir = join(vaultDir, "knowledge", "insights");
+  const insightPath = join(insightDir, "getting-started.md");
+  if (!existsSync(insightPath)) {
+    mkdirSync(insightDir, { recursive: true });
+    const id1 = Date.now().toString(36).toUpperCase().padStart(10, "0");
+    const now = new Date().toISOString();
+    writeFileSync(insightPath, `---
+id: ${id1}
+tags: ["getting-started", "vault"]
 source: context-mcp-setup
 created: ${now}
 ---
@@ -486,16 +594,48 @@ Welcome to your context vault! This is a seed entry created during setup.
 Your vault stores knowledge as plain markdown files with YAML frontmatter.
 AI agents search it using hybrid full-text + semantic search.
 
-Try these commands in your AI tool:
-- "Search my vault for getting started"
-- "Save an insight: JavaScript Date objects are mutable"
-- "Show my vault status"
+**Quick start:**
+- "Search my vault for getting started" — find this entry
+- "Save an insight about [topic]" — add knowledge
+- "Show my vault status" — check health
+- "List my recent entries" — browse your vault
 
 You can edit or delete this file anytime — it lives at:
-${seedPath}
-`;
-  writeFileSync(seedPath, content);
-  return true;
+${insightPath}
+`);
+    created++;
+  }
+
+  // Entry 2: Example decision
+  const decisionDir = join(vaultDir, "knowledge", "decisions");
+  const decisionPath = join(decisionDir, "example-local-first-data.md");
+  if (!existsSync(decisionPath)) {
+    mkdirSync(decisionDir, { recursive: true });
+    const id2 = (Date.now() + 1).toString(36).toUpperCase().padStart(10, "0");
+    const now = new Date().toISOString();
+    writeFileSync(decisionPath, `---
+id: ${id2}
+tags: ["example", "architecture"]
+source: context-mcp-setup
+created: ${now}
+---
+Example decision: Use local-first data storage (SQLite + files) over cloud databases.
+
+**Context:** For personal knowledge management, local storage provides better privacy,
+offline access, and zero ongoing cost. The vault uses plain markdown files as the
+source of truth with a SQLite index for fast search.
+
+**Trade-offs:**
+- Pro: Full data ownership, git-versioned, human-editable
+- Pro: No cloud dependency, works offline
+- Con: No built-in sync across devices (use git or Syncthing)
+
+This is an example entry showing the decision format. Feel free to delete it.
+`);
+    created++;
+  }
+
+  return created;
 }
 
 // ─── UI Command ──────────────────────────────────────────────────────────────
@@ -620,6 +760,104 @@ async function runStatus() {
   console.log();
 }
 
+// ─── Update Command ─────────────────────────────────────────────────────────
+
+async function runUpdate() {
+  console.log();
+  console.log(`  ${bold("◇ context-vault")} ${dim(`v${VERSION}`)}`);
+  console.log();
+
+  let latest;
+  try {
+    latest = execSync("npm view context-vault version", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+  } catch {
+    console.error(red("  Could not check for updates. Verify your network connection."));
+    return;
+  }
+
+  if (latest === VERSION) {
+    console.log(green("  Already up to date."));
+    console.log();
+    return;
+  }
+
+  console.log(`  Current: ${dim(VERSION)}`);
+  console.log(`  Latest:  ${green(latest)}`);
+  console.log();
+
+  if (!isNonInteractive) {
+    const answer = await prompt(`  Update to v${latest}? (Y/n):`, "Y");
+    if (answer.toLowerCase() === "n") {
+      console.log(dim("  Cancelled."));
+      return;
+    }
+  }
+
+  console.log(dim("  Installing..."));
+  try {
+    execSync("npm install -g context-vault@latest", { stdio: "inherit" });
+    console.log();
+    console.log(green(`  ✓ Updated to v${latest}`));
+  } catch {
+    console.error(red("  Update failed. Try manually: npm install -g context-vault@latest"));
+  }
+  console.log();
+}
+
+// ─── Uninstall Command ──────────────────────────────────────────────────────
+
+async function runUninstall() {
+  console.log();
+  console.log(`  ${bold("◇ context-vault")} ${dim("uninstall")}`);
+  console.log();
+
+  // Remove from Claude Code
+  try {
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    execSync("claude mcp remove context-mcp -s user", { stdio: "pipe", env });
+    console.log(`  ${green("+")} Removed from Claude Code`);
+  } catch {
+    console.log(`  ${dim("-")} Claude Code — not configured or not installed`);
+  }
+
+  // Remove from JSON-configured tools
+  for (const tool of TOOLS.filter((t) => t.configType === "json")) {
+    if (!existsSync(tool.configPath)) continue;
+    try {
+      const config = JSON.parse(readFileSync(tool.configPath, "utf-8"));
+      if (config[tool.configKey]?.["context-mcp"]) {
+        delete config[tool.configKey]["context-mcp"];
+        writeFileSync(tool.configPath, JSON.stringify(config, null, 2) + "\n");
+        console.log(`  ${green("+")} Removed from ${tool.name}`);
+      }
+    } catch {
+      console.log(`  ${dim("-")} ${tool.name} — could not update config`);
+    }
+  }
+
+  // Optionally remove data directory
+  const dataDir = join(HOME, ".context-mcp");
+  if (existsSync(dataDir)) {
+    console.log();
+    const answer = isNonInteractive
+      ? "n"
+      : await prompt(`  Remove data directory (${dataDir})? (y/N):`, "N");
+    if (answer.toLowerCase() === "y") {
+      const { rmSync } = await import("node:fs");
+      rmSync(dataDir, { recursive: true, force: true });
+      console.log(`  ${green("+")} Removed ${dataDir}`);
+    } else {
+      console.log(`  ${dim("Kept")} ${dataDir}`);
+    }
+  }
+
+  console.log();
+  console.log(dim("  Vault directory was not touched (your knowledge files are safe)."));
+  console.log(`  To fully remove: ${cyan("npm uninstall -g context-vault")}`);
+  console.log();
+}
+
 // ─── Serve Command ──────────────────────────────────────────────────────────
 
 async function runServe() {
@@ -658,6 +896,12 @@ async function main() {
       break;
     case "status":
       await runStatus();
+      break;
+    case "update":
+      await runUpdate();
+      break;
+    case "uninstall":
+      await runUninstall();
       break;
     default:
       console.error(red(`Unknown command: ${command}`));

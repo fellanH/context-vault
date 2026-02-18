@@ -108,9 +108,70 @@ Removes the markdown file from disk and cleans up the database and vector index.
 
 Shows vault path, database size, file counts per kind, embedding coverage, and any issues.
 
+## Quick Reference
+
+### CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `context-mcp setup` | Interactive installer — detects tools, writes configs |
+| `context-mcp status` | Show vault health, paths, and entry counts |
+| `context-mcp reindex` | Rebuild search index from vault files |
+| `context-mcp update` | Check for and install updates |
+| `context-mcp ui` | Launch web dashboard |
+
+### AI Tool Examples
+
+Tell your AI agent any of these:
+
+- **"Search my vault for React hooks"** → hybrid full-text + semantic search
+- **"Save an insight: always use useCallback for event handlers"** → creates a new entry
+- **"List my recent decisions"** → browse entries filtered by kind
+- **"Show my vault status"** → diagnostics and health check
+- **"Delete entry 01HXYZ..."** → remove by ID
+
+## Common Workflows
+
+### Save and Retrieve
+
+```
+You: "Save an insight: React Query's staleTime defaults to 0"
+AI:  ✓ Saved insight → knowledge/insights/react-querys-staletime-defaults.md
+
+You: "Search my vault for React Query"
+AI:  [Returns the saved insight with full content]
+```
+
+### Build a Project Knowledge Base
+
+```
+You: "Save a decision: we chose SQLite over Postgres for the local-first architecture"
+You: "Save a pattern: all API handlers follow the try/catch/respond pattern in src/api/"
+You: "What decisions have we made about the database?"
+AI:  [Returns relevant decisions ranked by relevance]
+```
+
+### Track Contacts and Entities
+
+```
+You: "Save a contact for Alice (alice@example.com) — lead developer on Project X"
+You: "Search my vault for Alice"
+AI:  [Returns the contact entry]
+```
+
+### Session Summaries
+
+```
+You: "Save a session summary: debugged auth token refresh, fixed race condition in useAuth hook"
+You: "What did I work on last week?"
+AI:  [Returns recent session entries]
+```
+
 ## Knowledge Organization
 
 ### Folders and Kinds
+
+Entries are organized into three categories — **knowledge** (enduring insights, decisions, patterns), **entity** (contacts, projects, tools), and **event** (sessions, conversations, logs). See [DATA_CATEGORIES.md](./DATA_CATEGORIES.md) for the full category system, kind mappings, and write semantics.
 
 Each top-level subdirectory in the vault maps to a `kind` value. The directory name is depluralized:
 

@@ -1,8 +1,8 @@
 /**
  * tools.js — MCP tool registrations
  *
- * Five tools: save_context (write/update), get_context (search), list_context (browse),
- * delete_context (remove), context_status (diag).
+ * Six tools: save_context (write/update), get_context (search), list_context (browse),
+ * delete_context (remove), submit_feedback (bug/feature reports), context_status (diag).
  * Auto-reindex runs transparently on first tool call per session.
  */
 
@@ -63,9 +63,9 @@ export function registerTools(server, ctx) {
 
   server.tool(
     "get_context",
-    "Search your knowledge vault. Returns entries ranked by relevance using hybrid full-text + semantic search. Use this to find insights, decisions, patterns, or any saved context.",
+    "Search your knowledge vault. Returns entries ranked by relevance using hybrid full-text + semantic search. Use this to find insights, decisions, patterns, or any saved context. Each result includes an `id` you can use with save_context or delete_context.",
     {
-      query: z.string().describe("Search query (natural language or keywords)"),
+      query: z.string().optional().describe("Search query (natural language or keywords). Optional if filters (tags, kind, category) are provided."),
       kind: z.string().optional().describe("Filter by kind (e.g. 'insight', 'decision', 'pattern')"),
       category: z.enum(["knowledge", "entity", "event"]).optional().describe("Filter by category"),
       tags: z.array(z.string()).optional().describe("Filter by tags (entries must match at least one)"),
@@ -74,38 +74,69 @@ export function registerTools(server, ctx) {
       limit: z.number().optional().describe("Max results to return (default 10)"),
     },
     async ({ query, kind, category, tags, since, until, limit }) => {
-      if (!query?.trim()) return err("Required: query (non-empty string)", "INVALID_INPUT");
+      const hasQuery = query?.trim();
+      const hasFilters = kind || category || tags?.length || since || until;
+      if (!hasQuery && !hasFilters) return err("Required: query or at least one filter (kind, category, tags, since, until)", "INVALID_INPUT");
       await ensureIndexed();
 
       const kindFilter = kind ? normalizeKind(kind) : null;
-      const sorted = await hybridSearch(ctx, query, {
-        kindFilter,
-        categoryFilter: category || null,
-        since: since || null,
-        until: until || null,
-        limit: limit || 10,
-      });
 
-      // Post-filter by tags if provided
-      const filtered = tags?.length
-        ? sorted.filter((r) => {
-            const entryTags = r.tags ? JSON.parse(r.tags) : [];
-            return tags.some((t) => entryTags.includes(t));
-          })
-        : sorted;
+      let filtered;
+      if (hasQuery) {
+        // Hybrid search mode
+        const sorted = await hybridSearch(ctx, query, {
+          kindFilter,
+          categoryFilter: category || null,
+          since: since || null,
+          until: until || null,
+          limit: limit || 10,
+        });
 
-      if (!filtered.length) return ok("No results found for: " + query);
+        // Post-filter by tags if provided
+        filtered = tags?.length
+          ? sorted.filter((r) => {
+              const entryTags = r.tags ? JSON.parse(r.tags) : [];
+              return tags.some((t) => entryTags.includes(t));
+            })
+          : sorted;
+      } else {
+        // Filter-only mode (no query, use SQL directly)
+        const clauses = [];
+        const params = [];
+        if (kindFilter) { clauses.push("kind = ?"); params.push(kindFilter); }
+        if (category) { clauses.push("category = ?"); params.push(category); }
+        if (since) { clauses.push("created_at >= ?"); params.push(since); }
+        if (until) { clauses.push("created_at <= ?"); params.push(until); }
+        clauses.push("(expires_at IS NULL OR expires_at > datetime('now'))");
+        const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+        const effectiveLimit = limit || 10;
+        params.push(effectiveLimit);
+        const rows = ctx.db.prepare(`SELECT * FROM vault ${where} ORDER BY created_at DESC LIMIT ?`).all(...params);
+
+        filtered = tags?.length
+          ? rows.filter((r) => {
+              const entryTags = r.tags ? JSON.parse(r.tags) : [];
+              return tags.some((t) => entryTags.includes(t));
+            })
+          : rows;
+
+        // Add score field for consistent output
+        for (const r of filtered) r.score = 0;
+      }
+
+      if (!filtered.length) return ok(hasQuery ? "No results found for: " + query : "No entries found matching the given filters.");
 
       const lines = [];
       if (reindexFailed) lines.push(`> **Warning:** Auto-reindex failed. Results may be stale. Run \`context-mcp reindex\` to fix.\n`);
-      lines.push(`## Results for "${query}" (${filtered.length} matches)\n`);
+      const heading = hasQuery ? `Results for "${query}"` : "Filtered entries";
+      lines.push(`## ${heading} (${filtered.length} matches)\n`);
       for (let i = 0; i < filtered.length; i++) {
         const r = filtered[i];
         const entryTags = r.tags ? JSON.parse(r.tags) : [];
         const tagStr = entryTags.length ? entryTags.join(", ") : "none";
         const relPath = r.file_path && config.vaultDir ? r.file_path.replace(config.vaultDir + "/", "") : r.file_path || "n/a";
         lines.push(`### [${i + 1}/${filtered.length}] ${r.title || "(untitled)"} [${r.kind}/${r.category}]`);
-        lines.push(`${r.score.toFixed(3)} · ${tagStr} · ${relPath}`);
+        lines.push(`${r.score.toFixed(3)} · ${tagStr} · ${relPath} · id: \`${r.id}\``);
         lines.push(r.body?.slice(0, 300) + (r.body?.length > 300 ? "..." : ""));
         lines.push("");
       }
@@ -117,7 +148,7 @@ export function registerTools(server, ctx) {
 
   server.tool(
     "save_context",
-    "Save knowledge to your vault. Creates a .md file and indexes it for search. Use for any kind of context: insights, decisions, patterns, references, or any custom kind.",
+    "Save knowledge to your vault. Creates a .md file and indexes it for search. Use for any kind of context: insights, decisions, patterns, references, or any custom kind. To update an existing entry, pass its `id` — omitted fields are preserved.",
     {
       id: z.string().optional().describe("Entry ULID to update. When provided, updates the existing entry instead of creating new. Omitted fields are preserved."),
       kind: z.string().optional().describe("Entry kind — determines folder (e.g. 'insight', 'decision', 'pattern', 'reference', or any custom kind). Required for new entries."),
@@ -155,6 +186,7 @@ export function registerTools(server, ctx) {
         if (entry.title) parts.push(`  title: ${entry.title}`);
         const entryTags = entry.tags || [];
         if (entryTags.length) parts.push(`  tags: ${entryTags.join(", ")}`);
+        parts.push("", "_Search with get_context to verify changes._");
         return ok(parts.join("\n"));
       }
 
@@ -179,6 +211,7 @@ export function registerTools(server, ctx) {
       const parts = [`✓ Saved ${kind} → ${relPath}`, `  id: ${entry.id}`];
       if (title) parts.push(`  title: ${title}`);
       if (tags?.length) parts.push(`  tags: ${tags.join(", ")}`);
+      parts.push("", "_Use this id to update or delete later._");
       return ok(parts.join("\n"));
     }
   );
@@ -187,7 +220,7 @@ export function registerTools(server, ctx) {
 
   server.tool(
     "list_context",
-    "Browse vault entries without a search query. Returns id, title, kind, category, tags, created_at. Use get_context with a query for semantic search.",
+    "Browse vault entries without a search query. Returns id, title, kind, category, tags, created_at. Use get_context with a query for semantic search. Use this to browse by tags or find recent entries.",
     {
       kind: z.string().optional().describe("Filter by kind (e.g. 'insight', 'decision', 'pattern')"),
       category: z.enum(["knowledge", "entity", "event"]).optional().describe("Filter by category"),
@@ -229,7 +262,7 @@ export function registerTools(server, ctx) {
       const total = ctx.db.prepare(`SELECT COUNT(*) as c FROM vault ${where}`).get(...countParams).c;
 
       params.push(effectiveLimit, effectiveOffset);
-      const rows = ctx.db.prepare(`SELECT id, title, kind, category, tags, created_at FROM vault ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params);
+      const rows = ctx.db.prepare(`SELECT id, title, kind, category, tags, created_at, SUBSTR(body, 1, 120) as preview FROM vault ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params);
 
       // Post-filter by tags if provided
       const filtered = tags?.length
@@ -246,6 +279,7 @@ export function registerTools(server, ctx) {
         const entryTags = r.tags ? JSON.parse(r.tags) : [];
         const tagStr = entryTags.length ? entryTags.join(", ") : "none";
         lines.push(`- **${r.title || "(untitled)"}** [${r.kind}/${r.category}] — ${tagStr} — ${r.created_at} — \`${r.id}\``);
+        if (r.preview) lines.push(`  ${r.preview.replace(/\n+/g, " ").trim()}${r.preview.length >= 120 ? "…" : ""}`);
       }
 
       if (effectiveOffset + effectiveLimit < total) {
@@ -289,11 +323,47 @@ export function registerTools(server, ctx) {
     }
   );
 
+  // ─── submit_feedback (bug/feature reports) ────────────────────────────────
+
+  server.tool(
+    "submit_feedback",
+    "Report a bug, request a feature, or suggest an improvement. Feedback is stored in the vault and triaged by the development pipeline.",
+    {
+      type: z.enum(["bug", "feature", "improvement"]).describe("Type of feedback"),
+      title: z.string().describe("Short summary of the feedback"),
+      body: z.string().describe("Detailed description"),
+      severity: z.enum(["low", "medium", "high"]).optional().describe("Severity level (default: medium)"),
+    },
+    async ({ type, title, body, severity }) => {
+      const vaultErr = ensureVaultExists(config);
+      if (vaultErr) return vaultErr;
+
+      await ensureIndexed();
+
+      const effectiveSeverity = severity || "medium";
+      const entry = await captureAndIndex(
+        ctx,
+        {
+          kind: "feedback",
+          title,
+          body,
+          tags: [type, effectiveSeverity],
+          source: "submit_feedback",
+          meta: { feedback_type: type, severity: effectiveSeverity, status: "new" },
+        },
+        indexEntry
+      );
+
+      const relPath = entry.filePath ? entry.filePath.replace(config.vaultDir + "/", "") : entry.filePath;
+      return ok(`Feedback submitted: ${type} [${effectiveSeverity}] → ${relPath}\n  id: ${entry.id}\n  title: ${title}`);
+    }
+  );
+
   // ─── context_status (diagnostics) ──────────────────────────────────────────
 
   server.tool(
     "context_status",
-    "Show vault health: resolved config, file counts per kind, database size, and any issues. Use to verify setup or troubleshoot.",
+    "Show vault health: resolved config, file counts per kind, database size, and any issues. Use to verify setup or troubleshoot. Call this when a user asks about their vault or to debug search issues.",
     {},
     () => {
       const status = gatherVaultStatus(ctx);
@@ -344,6 +414,17 @@ export function registerTools(server, ctx) {
         lines.push(`### ⚠ Stale Paths`);
         lines.push(`DB contains ${status.staleCount} paths not matching current vault dir.`);
         lines.push(`Auto-reindex will fix this on next search or save.`);
+      }
+
+      // Suggested actions
+      const actions = [];
+      if (status.stalePaths) actions.push("- Run `context-mcp reindex` to fix stale paths");
+      if (status.embeddingStatus?.missing > 0) actions.push("- Run `context-mcp reindex` to generate missing embeddings");
+      if (!config.vaultDirExists) actions.push("- Run `context-mcp setup` to create the vault directory");
+      if (status.kindCounts.length === 0 && config.vaultDirExists) actions.push("- Use `save_context` to add your first entry");
+
+      if (actions.length) {
+        lines.push("", "### Suggested Actions", ...actions);
       }
 
       return ok(lines.join("\n"));

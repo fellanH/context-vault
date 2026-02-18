@@ -80,3 +80,20 @@ process.on("SIGTERM", shutdown);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
+
+// ─── Non-blocking Update Check ──────────────────────────────────────────────
+
+setTimeout(() => {
+  import("node:child_process").then(({ execSync }) => {
+    try {
+      const latest = execSync("npm view context-vault version", {
+        encoding: "utf-8",
+        timeout: 5000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      if (latest && latest !== pkg.version) {
+        console.error(`[context-mcp] Update available: v${pkg.version} → v${latest}. Run: context-mcp update`);
+      }
+    } catch {}
+  }).catch(() => {});
+}, 3000);

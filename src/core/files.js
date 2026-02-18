@@ -56,6 +56,7 @@ const PLURAL_MAP = {
   message: "messages",
   session: "sessions",
   log: "logs",
+  feedback: "feedbacks",
 };
 
 const SINGULAR_MAP = Object.fromEntries(

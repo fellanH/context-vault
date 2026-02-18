@@ -27,6 +27,7 @@ const KIND_CATEGORY = {
   session: "event",
   task: "event",
   log: "event",
+  feedback: "event",
 };
 
 /** Map category name → directory name on disk */
