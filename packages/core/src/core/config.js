@@ -19,6 +19,7 @@ export function parseArgs(argv) {
     else if (argv[i] === "--data-dir" && argv[i + 1]) args.dataDir = argv[++i];
     else if (argv[i] === "--db-path" && argv[i + 1]) args.dbPath = argv[++i];
     else if (argv[i] === "--dev-dir" && argv[i + 1]) args.devDir = argv[++i];
+    else if (argv[i] === "--event-decay-days" && argv[i + 1]) args.eventDecayDays = Number(argv[++i]);
   }
   return args;
 }
@@ -34,6 +35,7 @@ export function resolveConfig() {
     dataDir,
     dbPath: join(dataDir, "vault.db"),
     devDir: join(HOME, "dev"),
+    eventDecayDays: 30,
     resolvedFrom: "defaults",
   };
 
@@ -46,6 +48,7 @@ export function resolveConfig() {
       if (fc.dataDir) { config.dataDir = fc.dataDir; config.dbPath = join(resolve(fc.dataDir), "vault.db"); }
       if (fc.dbPath) config.dbPath = fc.dbPath;
       if (fc.devDir) config.devDir = fc.devDir;
+      if (fc.eventDecayDays) config.eventDecayDays = fc.eventDecayDays;
       config.resolvedFrom = "config file";
     } catch (e) {
       throw new Error(`[context-mcp] Invalid config at ${configPath}: ${e.message}`);
@@ -57,11 +60,13 @@ export function resolveConfig() {
   if (process.env.CONTEXT_MCP_VAULT_DIR) { config.vaultDir = process.env.CONTEXT_MCP_VAULT_DIR; config.resolvedFrom = "env"; }
   if (process.env.CONTEXT_MCP_DB_PATH) { config.dbPath = process.env.CONTEXT_MCP_DB_PATH; config.resolvedFrom = "env"; }
   if (process.env.CONTEXT_MCP_DEV_DIR) { config.devDir = process.env.CONTEXT_MCP_DEV_DIR; config.resolvedFrom = "env"; }
+  if (process.env.CONTEXT_MCP_EVENT_DECAY_DAYS) { config.eventDecayDays = Number(process.env.CONTEXT_MCP_EVENT_DECAY_DAYS); config.resolvedFrom = "env"; }
 
   // 4. CLI arg overrides (highest priority)
   if (cliArgs.vaultDir) { config.vaultDir = cliArgs.vaultDir; config.resolvedFrom = "CLI args"; }
   if (cliArgs.dbPath) { config.dbPath = cliArgs.dbPath; config.resolvedFrom = "CLI args"; }
   if (cliArgs.devDir) { config.devDir = cliArgs.devDir; config.resolvedFrom = "CLI args"; }
+  if (cliArgs.eventDecayDays) { config.eventDecayDays = cliArgs.eventDecayDays; config.resolvedFrom = "CLI args"; }
 
   // Resolve all paths to absolute
   config.vaultDir = resolve(config.vaultDir);

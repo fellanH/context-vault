@@ -28,19 +28,23 @@ function buildFtsQuery(query) {
  *   knowledge + entity: no decay (enduring)
  *   event: steeper decay (~0.5 at 30 days)
  */
-function recencyBoost(createdAt, category) {
+function recencyBoost(createdAt, category, decayDays = 30) {
   if (category !== "event") return 1.0;
   const ageDays = (Date.now() - new Date(createdAt).getTime()) / 86400000;
-  return 1 / (1 + ageDays / 30);
+  return 1 / (1 + ageDays / decayDays);
 }
 
 /**
  * Build additional WHERE clauses for category/time filtering.
  * Returns { clauses: string[], params: any[] }
  */
-function buildFilterClauses({ categoryFilter, since, until }) {
+function buildFilterClauses({ categoryFilter, since, until, userIdFilter }) {
   const clauses = [];
   const params = [];
+  if (userIdFilter !== undefined) {
+    clauses.push("e.user_id = ?");
+    params.push(userIdFilter);
+  }
   if (categoryFilter) {
     clauses.push("e.category = ?");
     params.push(categoryFilter);
@@ -68,10 +72,10 @@ function buildFilterClauses({ categoryFilter, since, until }) {
 export async function hybridSearch(
   ctx,
   query,
-  { kindFilter = null, categoryFilter = null, since = null, until = null, limit = 20, offset = 0 } = {}
+  { kindFilter = null, categoryFilter = null, since = null, until = null, limit = 20, offset = 0, decayDays = 30, userIdFilter } = {}
 ) {
   const results = new Map();
-  const extraFilters = buildFilterClauses({ categoryFilter, since, until });
+  const extraFilters = buildFilterClauses({ categoryFilter, since, until, userIdFilter });
 
   // FTS5 search
   const ftsQuery = buildFtsQuery(query);
@@ -115,7 +119,9 @@ export async function hybridSearch(
       .get().c;
     if (vecCount > 0) {
       const queryVec = await ctx.embed(query);
-      const vecLimit = kindFilter ? 30 : 15;
+      // Increase limits in hosted mode to compensate for post-filtering
+      const hasUserFilter = userIdFilter !== undefined;
+      const vecLimit = hasUserFilter ? (kindFilter ? 60 : 30) : (kindFilter ? 30 : 15);
       const vecRows = ctx.db
         .prepare(
           `SELECT v.rowid, v.distance FROM vault_vec v WHERE embedding MATCH ? ORDER BY distance LIMIT ${vecLimit}`
@@ -136,6 +142,7 @@ export async function hybridSearch(
         for (const vr of vecRows) {
           const row = byRowid.get(vr.rowid);
           if (!row) continue;
+          if (userIdFilter !== undefined && row.user_id !== userIdFilter) continue;
           if (kindFilter && row.kind !== kindFilter) continue;
           if (categoryFilter && row.category !== categoryFilter) continue;
           if (since && row.created_at < since) continue;
@@ -165,7 +172,7 @@ export async function hybridSearch(
 
   // Apply category-aware recency boost
   for (const [, entry] of results) {
-    entry.score *= recencyBoost(entry.created_at, entry.category);
+    entry.score *= recencyBoost(entry.created_at, entry.category, decayDays);
   }
 
   const sorted = [...results.values()].sort((a, b) => b.score - a.score);

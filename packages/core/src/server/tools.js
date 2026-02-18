@@ -68,18 +68,49 @@ export function registerTools(server, ctx) {
       query: z.string().optional().describe("Search query (natural language or keywords). Optional if filters (tags, kind, category) are provided."),
       kind: z.string().optional().describe("Filter by kind (e.g. 'insight', 'decision', 'pattern')"),
       category: z.enum(["knowledge", "entity", "event"]).optional().describe("Filter by category"),
+      identity_key: z.string().optional().describe("For entity lookup: exact match on identity key. Requires kind."),
       tags: z.array(z.string()).optional().describe("Filter by tags (entries must match at least one)"),
       since: z.string().optional().describe("ISO date, return entries created after this"),
       until: z.string().optional().describe("ISO date, return entries created before this"),
       limit: z.number().optional().describe("Max results to return (default 10)"),
     },
-    async ({ query, kind, category, tags, since, until, limit }) => {
+    async ({ query, kind, category, identity_key, tags, since, until, limit }) => {
       const hasQuery = query?.trim();
-      const hasFilters = kind || category || tags?.length || since || until;
-      if (!hasQuery && !hasFilters) return err("Required: query or at least one filter (kind, category, tags, since, until)", "INVALID_INPUT");
+      const hasFilters = kind || category || tags?.length || since || until || identity_key;
+      if (!hasQuery && !hasFilters) return err("Required: query or at least one filter (kind, category, tags, since, until, identity_key)", "INVALID_INPUT");
       await ensureIndexed();
 
       const kindFilter = kind ? normalizeKind(kind) : null;
+
+      // Gap 1: Entity exact-match by identity_key
+      if (identity_key) {
+        if (!kindFilter) return err("identity_key requires kind to be specified", "INVALID_INPUT");
+        const match = ctx.stmts.getByIdentityKey.get(kindFilter, identity_key);
+        if (match) {
+          const entryTags = match.tags ? JSON.parse(match.tags) : [];
+          const tagStr = entryTags.length ? entryTags.join(", ") : "none";
+          const relPath = match.file_path && config.vaultDir ? match.file_path.replace(config.vaultDir + "/", "") : match.file_path || "n/a";
+          const lines = [
+            `## Entity Match (exact)\n`,
+            `### ${match.title || "(untitled)"} [${match.kind}/${match.category}]`,
+            `1.000 · ${tagStr} · ${relPath} · id: \`${match.id}\``,
+            match.body?.slice(0, 300) + (match.body?.length > 300 ? "..." : ""),
+          ];
+          return ok(lines.join("\n"));
+        }
+        // Fall through to semantic search as fallback
+      }
+
+      // Gap 2: Event default time-window
+      const effectiveCategory = category || (kindFilter ? categoryFor(kindFilter) : null);
+      let effectiveSince = since || null;
+      let effectiveUntil = until || null;
+      let autoWindowed = false;
+      if (effectiveCategory === "event" && !since && !until) {
+        const decayMs = (config.eventDecayDays || 30) * 86400000;
+        effectiveSince = new Date(Date.now() - decayMs).toISOString();
+        autoWindowed = true;
+      }
 
       let filtered;
       if (hasQuery) {
@@ -87,9 +118,10 @@ export function registerTools(server, ctx) {
         const sorted = await hybridSearch(ctx, query, {
           kindFilter,
           categoryFilter: category || null,
-          since: since || null,
-          until: until || null,
+          since: effectiveSince,
+          until: effectiveUntil,
           limit: limit || 10,
+          decayDays: config.eventDecayDays || 30,
         });
 
         // Post-filter by tags if provided
@@ -105,8 +137,8 @@ export function registerTools(server, ctx) {
         const params = [];
         if (kindFilter) { clauses.push("kind = ?"); params.push(kindFilter); }
         if (category) { clauses.push("category = ?"); params.push(category); }
-        if (since) { clauses.push("created_at >= ?"); params.push(since); }
-        if (until) { clauses.push("created_at <= ?"); params.push(until); }
+        if (effectiveSince) { clauses.push("created_at >= ?"); params.push(effectiveSince); }
+        if (effectiveUntil) { clauses.push("created_at <= ?"); params.push(effectiveUntil); }
         clauses.push("(expires_at IS NULL OR expires_at > datetime('now'))");
         const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
         const effectiveLimit = limit || 10;
@@ -139,6 +171,9 @@ export function registerTools(server, ctx) {
         lines.push(`${r.score.toFixed(3)} · ${tagStr} · ${relPath} · id: \`${r.id}\``);
         lines.push(r.body?.slice(0, 300) + (r.body?.length > 300 ? "..." : ""));
         lines.push("");
+      }
+      if (autoWindowed) {
+        lines.push(`_Showing events from last ${config.eventDecayDays || 30} days. Use since/until for custom range._`);
       }
       return ok(lines.join("\n"));
     }
@@ -387,6 +422,10 @@ export function registerTools(server, ctx) {
         const { indexed, total, missing } = status.embeddingStatus;
         const pct = total > 0 ? Math.round((indexed / total) * 100) : 100;
         lines.push(`Embeddings: ${indexed}/${total} (${pct}%)`);
+      }
+      lines.push(`Decay:     ${config.eventDecayDays} days (event recency window)`);
+      if (status.expiredCount > 0) {
+        lines.push(`Expired:   ${status.expiredCount} entries (pruned on next reindex)`);
       }
 
       lines.push(``, `### Indexed`);

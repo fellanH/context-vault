@@ -7,7 +7,7 @@
  * Agent Constraint: Can import ../core. Owns db.js and embed.js.
  */
 
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, unlinkSync } from "node:fs";
 import { join, basename } from "node:path";
 import { dirToKind, walkDir, ulid } from "../core/files.js";
 import { categoryFor, CATEGORY_DIRS } from "../core/categories.js";
@@ -28,28 +28,45 @@ const EMBED_BATCH_SIZE = 32;
  * @param {{ db, stmts, embed, insertVec, deleteVec }} ctx
  * @param {{ id, kind, category, title, body, meta, tags, source, filePath, createdAt, identity_key, expires_at }} entry
  */
-export async function indexEntry(ctx, { id, kind, category, title, body, meta, tags, source, filePath, createdAt, identity_key, expires_at }) {
+export async function indexEntry(ctx, { id, kind, category, title, body, meta, tags, source, filePath, createdAt, identity_key, expires_at, userId }) {
   const tagsJson = tags ? JSON.stringify(tags) : null;
   const metaJson = meta ? JSON.stringify(meta) : null;
   const cat = category || categoryFor(kind);
+  const userIdVal = userId || null;
 
   let wasUpdate = false;
 
-  // Entity upsert: check by (kind, identity_key) first
+  // Entity upsert: check by (kind, identity_key, user_id) first
   if (cat === "entity" && identity_key) {
-    const existing = ctx.stmts.getByIdentityKey.get(kind, identity_key);
+    const existing = ctx.stmts.getByIdentityKey.get(kind, identity_key, userIdVal);
     if (existing) {
       ctx.stmts.upsertByIdentityKey.run(
         title || null, body, metaJson, tagsJson, source || "claude-code", cat, filePath, expires_at || null,
-        kind, identity_key
+        kind, identity_key, userIdVal
       );
       wasUpdate = true;
     }
   }
 
   if (!wasUpdate) {
+    // Prepare encryption if ctx.encrypt is available
+    let encrypted = null;
+    if (ctx.encrypt) {
+      encrypted = await ctx.encrypt({ title, body, meta });
+    }
+
     try {
-      ctx.stmts.insertEntry.run(id, kind, cat, title || null, body, metaJson, tagsJson, source || "claude-code", filePath, identity_key || null, expires_at || null, createdAt);
+      if (encrypted) {
+        // Encrypted insert: store preview in body column for FTS, full content in encrypted columns
+        const bodyPreview = body.slice(0, 200);
+        ctx.stmts.insertEntryEncrypted.run(
+          id, userIdVal, kind, cat, title || null, bodyPreview, metaJson, tagsJson,
+          source || "claude-code", filePath, identity_key || null, expires_at || null, createdAt,
+          encrypted.body_encrypted, encrypted.title_encrypted, encrypted.meta_encrypted, encrypted.iv
+        );
+      } else {
+        ctx.stmts.insertEntry.run(id, userIdVal, kind, cat, title || null, body, metaJson, tagsJson, source || "claude-code", filePath, identity_key || null, expires_at || null, createdAt);
+      }
     } catch (e) {
       if (e.message.includes("UNIQUE constraint")) {
         ctx.stmts.updateEntry.run(title || null, body, metaJson, tagsJson, source || "claude-code", cat, identity_key || null, expires_at || null, filePath);
@@ -73,6 +90,8 @@ export async function indexEntry(ctx, { id, kind, category, title, body, meta, t
   if (!Number.isFinite(rowid) || rowid < 1) {
     throw new Error(`Invalid rowid retrieved: ${rowidResult.rowid} (type: ${typeof rowidResult.rowid})`);
   }
+
+  // Embeddings are always generated from plaintext (before encryption)
   const embeddingText = [title, body].filter(Boolean).join(" ");
   const embedding = await ctx.embed(embeddingText);
 
@@ -98,8 +117,9 @@ export async function reindex(ctx, opts = {}) {
   if (!existsSync(ctx.config.vaultDir)) return stats;
 
   // Use INSERT OR IGNORE for reindex — handles files with duplicate frontmatter IDs
+  // user_id is NULL for reindex (always local mode)
   const upsertEntry = ctx.db.prepare(
-    `INSERT OR IGNORE INTO vault (id, kind, category, title, body, meta, tags, source, file_path, identity_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO vault (id, user_id, kind, category, title, body, meta, tags, source, file_path, identity_key, expires_at, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   // Auto-discover kind directories, supporting both:
@@ -246,6 +266,21 @@ export async function reindex(ctx, opts = {}) {
           }
         }
       }
+    }
+
+    // Prune expired entries
+    const expired = ctx.db
+      .prepare("SELECT id, file_path FROM vault WHERE expires_at IS NOT NULL AND expires_at <= datetime('now')")
+      .all();
+
+    for (const row of expired) {
+      if (row.file_path) {
+        try { unlinkSync(row.file_path); } catch {}
+      }
+      const vRowid = ctx.stmts.getRowid.get(row.id)?.rowid;
+      if (vRowid) { try { ctx.deleteVec(vRowid); } catch {} }
+      ctx.stmts.deleteEntry.run(row.id);
+      stats.removed++;
     }
 
     ctx.db.exec("COMMIT");

@@ -77,6 +77,16 @@ export function gatherVaultStatus(ctx) {
     errors.push(`Stale path check failed: ${e.message}`);
   }
 
+  // Count expired entries pending pruning
+  let expiredCount = 0;
+  try {
+    expiredCount = db.prepare(
+      "SELECT COUNT(*) as c FROM vault WHERE expires_at IS NOT NULL AND expires_at <= datetime('now')"
+    ).get().c;
+  } catch (e) {
+    errors.push(`Expired count failed: ${e.message}`);
+  }
+
   // Embedding/vector status
   let embeddingStatus = null;
   try {
@@ -98,6 +108,7 @@ export function gatherVaultStatus(ctx) {
     dbSizeBytes,
     stalePaths,
     staleCount,
+    expiredCount,
     embeddingStatus,
     resolvedFrom: config.resolvedFrom,
     errors,
