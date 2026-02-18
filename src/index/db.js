@@ -114,6 +114,7 @@ export function prepareStatements(db) {
     deleteEntry: db.prepare(`DELETE FROM vault WHERE id = ?`),
     getRowid: db.prepare(`SELECT rowid FROM vault WHERE id = ?`),
     getRowidByPath: db.prepare(`SELECT rowid FROM vault WHERE file_path = ?`),
+    getEntryById: db.prepare(`SELECT * FROM vault WHERE id = ?`),
     getByIdentityKey: db.prepare(`SELECT * FROM vault WHERE kind = ? AND identity_key = ?`),
     upsertByIdentityKey: db.prepare(`UPDATE vault SET title = ?, body = ?, meta = ?, tags = ?, source = ?, category = ?, file_path = ?, expires_at = ? WHERE kind = ? AND identity_key = ?`),
     insertVecStmt: db.prepare(`INSERT INTO vault_vec (rowid, embedding) VALUES (?, ?)`),

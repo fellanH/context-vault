@@ -1,6 +1,6 @@
 {
   "name": "context-vault",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "description": "Persistent memory for AI agents — saves and searches knowledge across sessions",
   "bin": {
@@ -21,6 +21,13 @@
   "repository": { "type": "git", "url": "https://github.com/fellanH/context-mcp.git" },
   "homepage": "https://github.com/fellanH/context-mcp",
   "keywords": ["mcp", "model-context-protocol", "ai", "knowledge-base", "knowledge-management", "vault", "rag", "sqlite", "embeddings", "claude", "cursor", "cline", "windsurf"],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
+  },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
     "@modelcontextprotocol/sdk": "^1.26.0",

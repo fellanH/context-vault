@@ -11,7 +11,8 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { ulid, slugify, kindToPath } from "../core/files.js";
 import { categoryFor } from "../core/categories.js";
-import { parseFrontmatter } from "../core/frontmatter.js";
+import { parseFrontmatter, formatFrontmatter } from "../core/frontmatter.js";
+import { formatBody } from "./formatters.js";
 import { writeEntryFile } from "./file-ops.js";
 
 export function writeEntry(ctx, { kind, title, body, meta, tags, source, folder, identity_key, expires_at }) {
@@ -59,6 +60,70 @@ export function writeEntry(ctx, { kind, title, body, meta, tags, source, folder,
   });
 
   return { id, filePath, kind, category, title, body, meta, tags, source, createdAt, identity_key, expires_at };
+}
+
+/**
+ * Update an existing entry's file on disk (merge provided fields with existing).
+ * Does NOT re-index — caller must call indexEntry after.
+ *
+ * @param {{ config, stmts }} ctx
+ * @param {object} existing — Row from vault table (from getEntryById)
+ * @param {{ title?, body?, tags?, meta?, source?, expires_at? }} updates
+ * @returns {object} Entry object suitable for indexEntry
+ */
+export function updateEntryFile(ctx, existing, updates) {
+  const raw = readFileSync(existing.file_path, "utf-8");
+  const { meta: fmMeta } = parseFrontmatter(raw);
+
+  const existingMeta = existing.meta ? JSON.parse(existing.meta) : {};
+  const existingTags = existing.tags ? JSON.parse(existing.tags) : [];
+
+  const title = updates.title !== undefined ? updates.title : existing.title;
+  const body = updates.body !== undefined ? updates.body : existing.body;
+  const tags = updates.tags !== undefined ? updates.tags : existingTags;
+  const source = updates.source !== undefined ? updates.source : existing.source;
+  const expires_at = updates.expires_at !== undefined ? updates.expires_at : existing.expires_at;
+
+  let mergedMeta;
+  if (updates.meta !== undefined) {
+    mergedMeta = { ...existingMeta, ...(updates.meta || {}) };
+  } else {
+    mergedMeta = { ...existingMeta };
+  }
+
+  // Build frontmatter
+  const fmFields = { id: existing.id };
+  for (const [k, v] of Object.entries(mergedMeta)) {
+    if (k === "folder") continue;
+    if (v !== null && v !== undefined) fmFields[k] = v;
+  }
+  if (existing.identity_key) fmFields.identity_key = existing.identity_key;
+  if (expires_at) fmFields.expires_at = expires_at;
+  fmFields.tags = tags;
+  fmFields.source = source || "claude-code";
+  fmFields.created = fmMeta.created || existing.created_at;
+
+  const mdBody = formatBody(existing.kind, { title, body, meta: mergedMeta });
+  const md = formatFrontmatter(fmFields) + mdBody;
+
+  writeFileSync(existing.file_path, md);
+
+  const finalMeta = Object.keys(mergedMeta).length ? mergedMeta : undefined;
+
+  return {
+    id: existing.id,
+    filePath: existing.file_path,
+    kind: existing.kind,
+    category: existing.category,
+    title,
+    body,
+    meta: finalMeta,
+    tags,
+    source,
+    createdAt: fmMeta.created || existing.created_at,
+    identity_key: existing.identity_key,
+    expires_at,
+  };
 }
 
 export async function captureAndIndex(ctx, data, indexFn) {

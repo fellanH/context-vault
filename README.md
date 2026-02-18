@@ -30,12 +30,14 @@ Setup auto-detects your tools (Claude Code, Claude Desktop, Cursor, Windsurf, Cl
 
 ## Tools
 
-The server exposes three tools. Your AI agent calls them automatically — you don't invoke them directly.
+The server exposes five tools. Your AI agent calls them automatically — you don't invoke them directly.
 
 | Tool | Type | Description |
 |------|------|-------------|
 | `get_context` | Read | Hybrid FTS5 + vector search across all knowledge |
-| `save_context` | Write | Save any kind of knowledge to the vault |
+| `save_context` | Write | Save new knowledge or update existing entries by ID |
+| `list_context` | Browse | List vault entries with filtering and pagination |
+| `delete_context` | Delete | Remove an entry by ID (file + index) |
 | `context_status` | Diag | Show resolved config, health, and per-kind file counts |
 
 ### `get_context` — Search your vault
@@ -51,9 +53,10 @@ get_context({
 
 Returns entries ranked by combined full-text and semantic similarity, with recency weighting.
 
-### `save_context` — Save knowledge
+### `save_context` — Save or update knowledge
 
 ```js
+// Create new entry
 save_context({
   kind: "insight",                     // Determines folder: insights/
   body: "React Query staleTime defaults to 0",
@@ -64,9 +67,42 @@ save_context({
   source: "debugging-session"          // Optional: provenance
 })
 // → ~/vault/knowledge/insights/react/hooks/staletime-gotcha.md
+
+// Update existing entry by ID
+save_context({
+  id: "01HXYZ...",                     // ULID from a previous save
+  body: "Updated content here",        // Only provide fields you want to change
+  tags: ["react", "updated"]           // Omitted fields are preserved
+})
 ```
 
 The `kind` field accepts any string — `"insight"`, `"decision"`, `"pattern"`, `"reference"`, or any custom kind. The folder is auto-created from the pluralized kind name.
+
+When updating (`id` provided), omitted fields are preserved from the original. You cannot change `kind` or `identity_key` — delete and re-create instead.
+
+### `list_context` — Browse entries
+
+```js
+list_context({
+  kind: "insight",                     // Optional: filter by kind
+  category: "knowledge",              // Optional: knowledge, entity, or event
+  tags: ["react"],                    // Optional: filter by tags
+  limit: 10,                          // Optional: max results (default 20, max 100)
+  offset: 0                           // Optional: pagination offset
+})
+```
+
+Returns entry metadata (id, title, kind, category, tags, created_at) without body content. Use `get_context` with a search query to retrieve full entries.
+
+### `delete_context` — Remove an entry
+
+```js
+delete_context({
+  id: "01HXYZ..."                      // ULID of the entry to delete
+})
+```
+
+Removes the markdown file from disk and cleans up the database and vector index.
 
 ### `context_status` — Diagnostics
 

@@ -156,7 +156,8 @@ const TOOLS = [
 
 function showHelp() {
   console.log(`
-${bold("context-mcp")} v${VERSION} — Persistent memory for AI agents
+  ${bold("◇ context-vault")} ${dim(`v${VERSION}`)}
+  ${dim("Persistent memory for AI agents")}
 
 ${bold("Usage:")}
   context-mcp <command> [options]
@@ -180,14 +181,12 @@ ${bold("Options:")}
 async function runSetup() {
   // Banner
   console.log();
-  console.log(bold("  context-mcp") + dim(` v${VERSION}`));
-  console.log(dim("  Persistent memory for AI agents — saves and searches knowledge across sessions"));
-  console.log();
-  console.log(dim("  Setup will: detect tools, configure MCP, download embeddings, and verify."));
+  console.log(`  ${bold("◇ context-vault")} ${dim(`v${VERSION}`)}`);
+  console.log(dim("  Persistent memory for AI agents"));
   console.log();
 
   // Detect tools
-  console.log(bold("  Detecting installed tools...\n"));
+  console.log(dim(`  [1/5]`) + bold(" Detecting tools...\n"));
   const detected = [];
   for (const tool of TOOLS) {
     const found = tool.detect();
@@ -254,6 +253,7 @@ async function runSetup() {
   }
 
   // Vault directory (content files)
+  console.log(dim(`  [2/5]`) + bold(" Configuring vault...\n"));
   const defaultVaultDir = join(HOME, "vault");
   const vaultDir = isNonInteractive
     ? defaultVaultDir
@@ -299,7 +299,7 @@ async function runSetup() {
   console.log(`\n  ${green("+")} Wrote ${configPath}`);
 
   // Pre-download embedding model
-  console.log(`\n${bold("  Downloading embedding model...")}`);
+  console.log(`\n  ${dim("[3/5]")}${bold(" Downloading embedding model...")}`);
   console.log(dim("  all-MiniLM-L6-v2 (~22MB, one-time download)\n"));
   try {
     const { embed } = await import("../src/index/embed.js");
@@ -319,7 +319,7 @@ async function runSetup() {
   }
 
   // Configure each tool — pass vault dir as arg if non-default
-  console.log(`\n${bold("  Configuring tools...\n")}`);
+  console.log(`\n  ${dim("[4/5]")}${bold(" Configuring tools...\n")}`);
   const results = [];
   const defaultVDir = join(HOME, "vault");
   const customVaultDir = resolvedVaultDir !== resolve(defaultVDir) ? resolvedVaultDir : null;
@@ -360,26 +360,34 @@ async function runSetup() {
   }
 
   // Health check
-  const ok = results.filter((r) => r.ok);
+  console.log(`\n  ${dim("[5/5]")}${bold(" Health check...")}\n`);
+  const okResults = results.filter((r) => r.ok);
   const checks = [
     { label: "Vault directory exists", pass: existsSync(resolvedVaultDir) },
     { label: "Config file written", pass: existsSync(configPath) },
-    { label: "At least one tool configured", pass: ok.length > 0 },
+    { label: "At least one tool configured", pass: okResults.length > 0 },
   ];
   const passed = checks.filter((c) => c.pass).length;
-  console.log(bold(`\n  Health check: ${passed}/${checks.length} passed\n`));
   for (const c of checks) {
-    console.log(`  ${c.pass ? green("+") : red("x")} ${c.label}`);
+    console.log(`  ${c.pass ? green("✓") : red("✗")} ${c.label}`);
   }
 
-  // First-use guidance
-  const toolName = ok.length ? ok[0].tool.name : "your AI tool";
-  console.log(bold("\n  What to do next:\n"));
-  console.log(`  1. Open ${toolName}`);
-  console.log(`  2. Try: ${cyan('"Search my vault for getting started"')}`);
-  console.log(`  3. Try: ${cyan('"Save an insight: JavaScript Date objects are mutable"')}`);
-  console.log(`\n  Vault:     ${resolvedVaultDir}`);
-  console.log(`  Dashboard: ${cyan("context-mcp ui")}`);
+  // Completion box
+  const toolName = okResults.length ? okResults[0].tool.name : "your AI tool";
+  const boxLines = [
+    `  ✓ Setup complete — ${passed}/${checks.length} checks passed`,
+    ``,
+    `  Open ${toolName} and try:`,
+    `  "Search my vault for getting started"`,
+  ];
+  const innerWidth = Math.max(...boxLines.map((l) => l.length)) + 2;
+  const pad = (s) => s + " ".repeat(Math.max(0, innerWidth - s.length));
+  console.log();
+  console.log(`  ${dim("┌" + "─".repeat(innerWidth) + "┐")}`);
+  for (const line of boxLines) {
+    console.log(`  ${dim("│")}${pad(line)}${dim("│")}`);
+  }
+  console.log(`  ${dim("└" + "─".repeat(innerWidth) + "┘")}`);
   console.log();
 }
 
@@ -537,11 +545,11 @@ async function runReindex() {
   const stats = await reindex(ctx, { fullSync: true });
 
   db.close();
-  console.log(green("Reindex complete:"));
-  console.log(`  Added:     ${stats.added}`);
-  console.log(`  Updated:   ${stats.updated}`);
-  console.log(`  Removed:   ${stats.removed}`);
-  console.log(`  Unchanged: ${stats.unchanged}`);
+  console.log(green("✓ Reindex complete"));
+  console.log(`  ${green("+")} ${stats.added} added`);
+  console.log(`  ${yellow("~")} ${stats.updated} updated`);
+  console.log(`  ${red("-")} ${stats.removed} removed`);
+  console.log(`  ${dim("·")} ${stats.unchanged} unchanged`);
 }
 
 // ─── Status Command ──────────────────────────────────────────────────────────
@@ -559,24 +567,41 @@ async function runStatus() {
   db.close();
 
   console.log();
-  console.log(bold("  Vault Status"));
+  console.log(`  ${bold("◇ context-vault")} ${dim(`v${VERSION}`)}`);
   console.log();
-  console.log(`  Vault:     ${config.vaultDir} (exists: ${config.vaultDirExists}, ${status.fileCount} files)`);
-  console.log(`  Database:  ${config.dbPath} (${status.dbSize})`);
+  console.log(`  Vault:     ${config.vaultDir} ${dim(`(${config.vaultDirExists ? status.fileCount + " files" : "missing"})`)}`);
+  console.log(`  Database:  ${config.dbPath} ${dim(`(${status.dbSize})`)}`);
   console.log(`  Dev dir:   ${config.devDir}`);
   console.log(`  Data dir:  ${config.dataDir}`);
-  console.log(`  Config:    ${config.configPath} (exists: ${existsSync(config.configPath)})`);
+  console.log(`  Config:    ${config.configPath} ${dim(`(${existsSync(config.configPath) ? "exists" : "missing"})`)}`);
   console.log(`  Resolved:  ${status.resolvedFrom}`);
   console.log(`  Schema:    v5 (categories)`);
 
   if (status.kindCounts.length) {
+    const BAR_WIDTH = 20;
+    const maxCount = Math.max(...status.kindCounts.map((k) => k.c));
     console.log();
     console.log(bold("  Indexed"));
     for (const { kind, c } of status.kindCounts) {
-      console.log(`    ${c} ${kind}s`);
+      const filled = maxCount > 0 ? Math.round((c / maxCount) * BAR_WIDTH) : 0;
+      const bar = "█".repeat(filled) + "░".repeat(BAR_WIDTH - filled);
+      const countStr = String(c).padStart(4);
+      console.log(`  ${countStr} ${kind}s   ${dim(bar)}`);
     }
   } else {
     console.log(`\n  ${dim("(empty — no entries indexed)")}`);
+  }
+
+  if (status.embeddingStatus) {
+    const { indexed, total, missing } = status.embeddingStatus;
+    if (missing > 0) {
+      const BAR_WIDTH = 20;
+      const filled = total > 0 ? Math.round((indexed / total) * BAR_WIDTH) : 0;
+      const bar = "█".repeat(filled) + "░".repeat(BAR_WIDTH - filled);
+      const pct = total > 0 ? Math.round((indexed / total) * 100) : 0;
+      console.log();
+      console.log(`  Embeddings ${dim(bar)} ${indexed}/${total} (${pct}%)`);
+    }
   }
 
   if (status.subdirs.length) {
