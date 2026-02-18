@@ -24,12 +24,36 @@ function buildFtsQuery(query) {
 }
 
 /**
- * Gentle recency decay: 1.0 for today, ~0.87 at 30 days, ~0.69 at 90 days.
+ * Category-aware recency decay:
+ *   knowledge + entity: no decay (enduring)
+ *   event: steeper decay (~0.5 at 30 days)
  */
-function recencyBoost(createdAt) {
-  const ageMs = Date.now() - new Date(createdAt).getTime();
-  const ageDays = ageMs / (1000 * 60 * 60 * 24);
-  return 1 / (1 + ageDays / 200);
+function recencyBoost(createdAt, category) {
+  if (category !== "event") return 1.0;
+  const ageDays = (Date.now() - new Date(createdAt).getTime()) / 86400000;
+  return 1 / (1 + ageDays / 30);
+}
+
+/**
+ * Build additional WHERE clauses for category/time filtering.
+ * Returns { clauses: string[], params: any[] }
+ */
+function buildFilterClauses({ categoryFilter, since, until }) {
+  const clauses = [];
+  const params = [];
+  if (categoryFilter) {
+    clauses.push("e.category = ?");
+    params.push(categoryFilter);
+  }
+  if (since) {
+    clauses.push("e.created_at >= ?");
+    params.push(since);
+  }
+  if (until) {
+    clauses.push("e.created_at <= ?");
+    params.push(until);
+  }
+  return { clauses, params };
 }
 
 /**
@@ -37,27 +61,33 @@ function recencyBoost(createdAt) {
  *
  * @param {{ db, embed }} ctx
  * @param {string} query
- * @param {{ kindFilter?: string|null, limit?: number, offset?: number }} opts
- * @returns {Promise<Array<{id, kind, title, body, meta, tags, source, file_path, created_at, score}>>}
+ * @param {{ kindFilter?: string|null, categoryFilter?: string|null, since?: string|null, until?: string|null, limit?: number, offset?: number }} opts
+ * @returns {Promise<Array<{id, kind, category, title, body, meta, tags, source, file_path, created_at, score}>>}
  */
 export async function hybridSearch(
   ctx,
   query,
-  { kindFilter = null, limit = 20, offset = 0 } = {}
+  { kindFilter = null, categoryFilter = null, since = null, until = null, limit = 20, offset = 0 } = {}
 ) {
   const results = new Map();
+  const extraFilters = buildFilterClauses({ categoryFilter, since, until });
 
   // FTS5 search
   const ftsQuery = buildFtsQuery(query);
   if (ftsQuery) {
     try {
-      const ftsSQL = kindFilter
-        ? `SELECT e.*, rank FROM vault_fts f JOIN vault e ON f.rowid = e.rowid WHERE vault_fts MATCH ? AND e.kind = ? ORDER BY rank LIMIT 15`
-        : `SELECT e.*, rank FROM vault_fts f JOIN vault e ON f.rowid = e.rowid WHERE vault_fts MATCH ? ORDER BY rank LIMIT 15`;
+      const whereParts = ["vault_fts MATCH ?"];
+      const ftsParams = [ftsQuery];
 
-      const rows = kindFilter
-        ? ctx.db.prepare(ftsSQL).all(ftsQuery, kindFilter)
-        : ctx.db.prepare(ftsSQL).all(ftsQuery);
+      if (kindFilter) {
+        whereParts.push("e.kind = ?");
+        ftsParams.push(kindFilter);
+      }
+      whereParts.push(...extraFilters.clauses);
+      ftsParams.push(...extraFilters.params);
+
+      const ftsSQL = `SELECT e.*, rank FROM vault_fts f JOIN vault e ON f.rowid = e.rowid WHERE ${whereParts.join(" AND ")} ORDER BY rank LIMIT 15`;
+      const rows = ctx.db.prepare(ftsSQL).all(...ftsParams);
 
       // Normalize FTS scores to [0, 1]
       const ftsScores = rows.map((r) => Math.abs(r.rank || 0));
@@ -104,15 +134,19 @@ export async function hybridSearch(
 
         for (const vr of vecRows) {
           const row = byRowid.get(vr.rowid);
-          if (row && (!kindFilter || row.kind === kindFilter)) {
-            const { rowid: _rowid, ...cleanRow } = row;
-            const vecScore = (1 - vr.distance) * VEC_WEIGHT;
-            const existing = results.get(cleanRow.id);
-            if (existing) {
-              existing.score += vecScore;
-            } else {
-              results.set(cleanRow.id, { ...cleanRow, score: vecScore });
-            }
+          if (!row) continue;
+          if (kindFilter && row.kind !== kindFilter) continue;
+          if (categoryFilter && row.category !== categoryFilter) continue;
+          if (since && row.created_at < since) continue;
+          if (until && row.created_at > until) continue;
+
+          const { rowid: _rowid, ...cleanRow } = row;
+          const vecScore = (1 - vr.distance) * VEC_WEIGHT;
+          const existing = results.get(cleanRow.id);
+          if (existing) {
+            existing.score += vecScore;
+          } else {
+            results.set(cleanRow.id, { ...cleanRow, score: vecScore });
           }
         }
       }
@@ -125,9 +159,9 @@ export async function hybridSearch(
     }
   }
 
-  // Apply recency boost
+  // Apply category-aware recency boost
   for (const [, entry] of results) {
-    entry.score *= recencyBoost(entry.created_at);
+    entry.score *= recencyBoost(entry.created_at, entry.category);
   }
 
   const sorted = [...results.values()].sort((a, b) => b.score - a.score);

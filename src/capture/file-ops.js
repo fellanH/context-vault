@@ -7,11 +7,11 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { formatFrontmatter } from "../core/frontmatter.js";
-import { slugify, kindToDir } from "../core/files.js";
+import { slugify, kindToPath } from "../core/files.js";
 import { formatBody } from "./formatters.js";
 
 function safeFolderPath(vaultDir, kind, folder) {
-  const base = resolve(vaultDir, kindToDir(kind));
+  const base = resolve(vaultDir, kindToPath(kind));
   if (!folder) return base;
   const resolved = resolve(base, folder);
   if (!resolved.startsWith(base + "/") && resolved !== base) {
@@ -20,7 +20,7 @@ function safeFolderPath(vaultDir, kind, folder) {
   return resolved;
 }
 
-export function writeEntryFile(vaultDir, kind, { id, title, body, meta, tags, source, createdAt, folder }) {
+export function writeEntryFile(vaultDir, kind, { id, title, body, meta, tags, source, createdAt, folder, category, identity_key, expires_at }) {
   // P5: folder is now a top-level param; also accept from meta for backward compat
   const resolvedFolder = folder || meta?.folder || "";
   const dir = safeFolderPath(vaultDir, kind, resolvedFolder);
@@ -42,15 +42,25 @@ export function writeEntryFile(vaultDir, kind, { id, title, body, meta, tags, so
     }
   }
 
+  if (identity_key) fmFields.identity_key = identity_key;
+  if (expires_at) fmFields.expires_at = expires_at;
   fmFields.tags = tags || [];
   fmFields.source = source || "claude-code";
   fmFields.created = created;
 
   const mdBody = formatBody(kind, { title, body, meta });
 
-  const slug = slugify((title || body).slice(0, 40));
-  const shortId = id.slice(-8).toLowerCase();
-  const filename = slug ? `${slug}-${shortId}.md` : `${shortId}.md`;
+  // Entity kinds: deterministic filename from identity_key (no ULID suffix)
+  let filename;
+  if (category === "entity" && identity_key) {
+    const identitySlug = slugify(identity_key);
+    filename = identitySlug ? `${identitySlug}.md` : `${id.slice(-8).toLowerCase()}.md`;
+  } else {
+    const slug = slugify((title || body).slice(0, 40));
+    const shortId = id.slice(-8).toLowerCase();
+    filename = slug ? `${slug}-${shortId}.md` : `${shortId}.md`;
+  }
+
   const filePath = resolve(dir, filename);
   const md = formatFrontmatter(fmFields) + mdBody;
 

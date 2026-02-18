@@ -6,6 +6,7 @@
 
 import { readdirSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
+import { categoryDirFor } from "./categories.js";
 
 // ─── ULID Generator (Crockford Base32) ────────────────────────────────────────
 
@@ -47,6 +48,14 @@ const PLURAL_MAP = {
   pattern: "patterns",
   status: "statuses",
   analysis: "analyses",
+  contact: "contacts",
+  project: "projects",
+  tool: "tools",
+  source: "sources",
+  conversation: "conversations",
+  message: "messages",
+  session: "sessions",
+  log: "logs",
 };
 
 const SINGULAR_MAP = Object.fromEntries(
@@ -61,6 +70,11 @@ export function kindToDir(kind) {
 export function dirToKind(dirName) {
   if (SINGULAR_MAP[dirName]) return SINGULAR_MAP[dirName];
   return dirName.replace(/s$/, "");
+}
+
+/** Returns relative path from vault root → kind dir: "knowledge/insights", "events/sessions", etc. */
+export function kindToPath(kind) {
+  return `${categoryDirFor(kind)}/${kindToDir(kind)}`;
 }
 
 // ─── Safe Path Join ─────────────────────────────────────────────────────────

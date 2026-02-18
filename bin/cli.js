@@ -466,9 +466,16 @@ async function runReindex() {
 
   const db = initDatabase(config.dbPath);
   const stmts = prepareStatements(db);
-  const vecHelpers = { insertVec, deleteVec };
+  const ctx = {
+    db,
+    config,
+    stmts,
+    embed,
+    insertVec: (r, e) => insertVec(stmts, r, e),
+    deleteVec: (r) => deleteVec(stmts, r),
+  };
 
-  const stats = await reindex(db, config, embed, stmts, vecHelpers, { fullSync: true });
+  const stats = await reindex(ctx, { fullSync: true });
 
   db.close();
   console.log(green("Reindex complete:"));
@@ -501,7 +508,7 @@ async function runStatus() {
   console.log(`  Data dir:  ${config.dataDir}`);
   console.log(`  Config:    ${config.configPath} (exists: ${existsSync(config.configPath)})`);
   console.log(`  Resolved:  ${status.resolvedFrom}`);
-  console.log(`  Schema:    v4 (vault table)`);
+  console.log(`  Schema:    v5 (categories)`);
 
   if (status.kindCounts.length) {
     console.log();

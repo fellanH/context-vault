@@ -7,6 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf-8"));
 
 import { resolveConfig } from "../core/config.js";
 import { embed } from "../index/embed.js";
@@ -21,11 +22,10 @@ const config = resolveConfig();
 mkdirSync(config.dataDir, { recursive: true });
 mkdirSync(config.vaultDir, { recursive: true });
 
-// Write .context-mcp marker if missing
+// Write .context-mcp marker (always update to reflect current version)
 const markerPath = join(config.vaultDir, ".context-mcp");
-if (!existsSync(markerPath)) {
-  writeFileSync(markerPath, JSON.stringify({ created: new Date().toISOString() }, null, 2) + "\n");
-}
+const markerData = existsSync(markerPath) ? JSON.parse(readFileSync(markerPath, "utf-8")) : {};
+writeFileSync(markerPath, JSON.stringify({ created: markerData.created || new Date().toISOString(), version: pkg.version }, null, 2) + "\n");
 
 // Update existence flag after directory creation
 config.vaultDirExists = existsSync(config.vaultDir);
@@ -54,10 +54,8 @@ const ctx = {
 
 // ─── MCP Server ──────────────────────────────────────────────────────────────
 
-const { version } = JSON.parse(readFileSync(join(__dirname, "..", "..", "package.json"), "utf-8"));
-
 const server = new McpServer(
-  { name: "context-mcp", version },
+  { name: "context-mcp", version: pkg.version },
   { capabilities: { tools: {} } }
 );
 

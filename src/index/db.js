@@ -6,23 +6,28 @@ import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 import { unlinkSync } from "node:fs";
 
-// ─── Schema DDL (v4 — vault table) ──────────────────────────────────────────
+// ─── Schema DDL (v5 — categories) ───────────────────────────────────────────
 
 export const SCHEMA_DDL = `
   CREATE TABLE IF NOT EXISTS vault (
-    id         TEXT PRIMARY KEY,
-    kind       TEXT NOT NULL,
-    title      TEXT,
-    body       TEXT NOT NULL,
-    meta       TEXT,
-    tags       TEXT,
-    source     TEXT,
-    file_path  TEXT UNIQUE,
-    created_at TEXT DEFAULT (datetime('now'))
+    id           TEXT PRIMARY KEY,
+    kind         TEXT NOT NULL,
+    category     TEXT NOT NULL DEFAULT 'knowledge',
+    title        TEXT,
+    body         TEXT NOT NULL,
+    meta         TEXT,
+    tags         TEXT,
+    source       TEXT,
+    file_path    TEXT UNIQUE,
+    identity_key TEXT,
+    expires_at   TEXT,
+    created_at   TEXT DEFAULT (datetime('now'))
   );
 
   CREATE INDEX IF NOT EXISTS idx_vault_kind ON vault(kind);
-  CREATE INDEX IF NOT EXISTS idx_vault_kind_created ON vault(kind, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_vault_category ON vault(category);
+  CREATE INDEX IF NOT EXISTS idx_vault_category_created ON vault(category, created_at DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_identity ON vault(kind, identity_key) WHERE identity_key IS NOT NULL;
 
   -- Single FTS5 table
   CREATE VIRTUAL TABLE IF NOT EXISTS vault_fts USING fts5(
@@ -68,11 +73,13 @@ export function initDatabase(dbPath) {
 
   const version = db.pragma("user_version", { simple: true });
 
-  // P6: Enforce fresh-DB-only — old schemas get a full rebuild
-  if (version > 0 && version < 4) {
+  // Enforce fresh-DB-only — old schemas get a full rebuild
+  if (version > 0 && version < 5) {
     console.error(`[context-mcp] Schema v${version} is outdated. Rebuilding database...`);
     db.close();
     unlinkSync(dbPath);
+    try { unlinkSync(dbPath + "-wal"); } catch {}
+    try { unlinkSync(dbPath + "-shm"); } catch {}
     const freshDb = new Database(dbPath);
     freshDb.pragma("journal_mode = WAL");
     freshDb.pragma("foreign_keys = ON");
@@ -86,13 +93,13 @@ export function initDatabase(dbPath) {
       throw e;
     }
     freshDb.exec(SCHEMA_DDL);
-    freshDb.pragma("user_version = 4");
+    freshDb.pragma("user_version = 5");
     return freshDb;
   }
 
-  if (version < 4) {
+  if (version < 5) {
     db.exec(SCHEMA_DDL);
-    db.pragma("user_version = 4");
+    db.pragma("user_version = 5");
   }
 
   return db;
@@ -102,10 +109,13 @@ export function initDatabase(dbPath) {
 
 export function prepareStatements(db) {
   return {
-    insertEntry: db.prepare(`INSERT INTO vault (id, kind, title, body, meta, tags, source, file_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-    updateEntry: db.prepare(`UPDATE vault SET title = ?, body = ?, meta = ?, tags = ?, source = ? WHERE file_path = ?`),
+    insertEntry: db.prepare(`INSERT INTO vault (id, kind, category, title, body, meta, tags, source, file_path, identity_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    updateEntry: db.prepare(`UPDATE vault SET title = ?, body = ?, meta = ?, tags = ?, source = ?, category = ?, identity_key = ?, expires_at = ? WHERE file_path = ?`),
     deleteEntry: db.prepare(`DELETE FROM vault WHERE id = ?`),
     getRowid: db.prepare(`SELECT rowid FROM vault WHERE id = ?`),
+    getRowidByPath: db.prepare(`SELECT rowid FROM vault WHERE file_path = ?`),
+    getByIdentityKey: db.prepare(`SELECT * FROM vault WHERE kind = ? AND identity_key = ?`),
+    upsertByIdentityKey: db.prepare(`UPDATE vault SET title = ?, body = ?, meta = ?, tags = ?, source = ?, category = ?, file_path = ?, expires_at = ? WHERE kind = ? AND identity_key = ?`),
     insertVecStmt: db.prepare(`INSERT INTO vault_vec (rowid, embedding) VALUES (?, ?)`),
     deleteVecStmt: db.prepare(`DELETE FROM vault_vec WHERE rowid = ?`),
   };
@@ -114,8 +124,10 @@ export function prepareStatements(db) {
 // ─── Vector Helpers (parameterized rowid via cached statements) ──────────────
 
 export function insertVec(stmts, rowid, embedding) {
-  const safeRowid = Number(rowid);
-  if (!Number.isFinite(safeRowid) || safeRowid < 0) throw new Error(`Invalid rowid: ${rowid}`);
+  // sqlite-vec requires INTEGER for primary key — coerce to plain int (BigInt/Number → int64)
+  const n = typeof rowid === "bigint" ? Number(rowid) : Number(rowid);
+  const safeRowid = n >= 0 ? Math.floor(n) : Math.ceil(n);
+  if (!Number.isSafeInteger(safeRowid) || safeRowid < 1) throw new Error(`Invalid rowid: ${rowid}`);
   stmts.insertVecStmt.run(safeRowid, embedding);
 }
 

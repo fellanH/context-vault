@@ -7,11 +7,14 @@
  * Agent Constraint: Only imports from ../core. Never imports ../index or ../retrieve.
  */
 
-import { unlinkSync } from "node:fs";
-import { ulid } from "../core/files.js";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { resolve } from "node:path";
+import { ulid, slugify, kindToPath } from "../core/files.js";
+import { categoryFor } from "../core/categories.js";
+import { parseFrontmatter } from "../core/frontmatter.js";
 import { writeEntryFile } from "./file-ops.js";
 
-export function writeEntry(ctx, { kind, title, body, meta, tags, source, folder }) {
+export function writeEntry(ctx, { kind, title, body, meta, tags, source, folder, identity_key, expires_at }) {
   if (!kind || typeof kind !== "string") {
     throw new Error("writeEntry: kind is required (non-empty string)");
   }
@@ -25,14 +28,37 @@ export function writeEntry(ctx, { kind, title, body, meta, tags, source, folder 
     throw new Error("writeEntry: meta must be an object if provided");
   }
 
-  const id = ulid();
-  const createdAt = new Date().toISOString();
+  const category = categoryFor(kind);
+
+  // Entity upsert: check for existing file at deterministic path
+  let id;
+  let createdAt;
+  if (category === "entity" && identity_key) {
+    const identitySlug = slugify(identity_key);
+    const dir = resolve(ctx.config.vaultDir, kindToPath(kind));
+    const existingPath = resolve(dir, `${identitySlug}.md`);
+
+    if (existsSync(existingPath)) {
+      // Preserve original ID and created timestamp from existing file
+      const raw = readFileSync(existingPath, "utf-8");
+      const { meta: fmMeta } = parseFrontmatter(raw);
+      id = fmMeta.id || ulid();
+      createdAt = fmMeta.created || new Date().toISOString();
+    } else {
+      id = ulid();
+      createdAt = new Date().toISOString();
+    }
+  } else {
+    id = ulid();
+    createdAt = new Date().toISOString();
+  }
 
   const filePath = writeEntryFile(ctx.config.vaultDir, kind, {
     id, title, body, meta, tags, source, createdAt, folder,
+    category, identity_key, expires_at,
   });
 
-  return { id, filePath, kind, title, body, meta, tags, source, createdAt };
+  return { id, filePath, kind, category, title, body, meta, tags, source, createdAt, identity_key, expires_at };
 }
 
 export async function captureAndIndex(ctx, data, indexFn) {

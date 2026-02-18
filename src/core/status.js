@@ -42,6 +42,14 @@ export function gatherVaultStatus(ctx) {
     errors.push(`Kind count query failed: ${e.message}`);
   }
 
+  // Count DB rows by category
+  let categoryCounts = [];
+  try {
+    categoryCounts = db.prepare("SELECT category, COUNT(*) as c FROM vault GROUP BY category").all();
+  } catch (e) {
+    errors.push(`Category count query failed: ${e.message}`);
+  }
+
   // DB file size
   let dbSize = "n/a";
   let dbSizeBytes = 0;
@@ -85,6 +93,7 @@ export function gatherVaultStatus(ctx) {
     fileCount,
     subdirs,
     kindCounts,
+    categoryCounts,
     dbSize,
     dbSizeBytes,
     stalePaths,

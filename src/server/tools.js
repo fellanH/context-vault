@@ -12,6 +12,7 @@ import { captureAndIndex } from "../capture/index.js";
 import { hybridSearch } from "../retrieve/index.js";
 import { reindex, indexEntry } from "../index/index.js";
 import { gatherVaultStatus } from "../core/status.js";
+import { categoryFor } from "../core/categories.js";
 import { ok, err, ensureVaultExists, ensureValidKind } from "./helpers.js";
 
 /**
@@ -62,14 +63,23 @@ export function registerTools(server, ctx) {
     {
       query: z.string().describe("Search query (natural language or keywords)"),
       kind: z.string().optional().describe("Filter by kind (e.g. 'insight', 'decision', 'pattern')"),
+      category: z.enum(["knowledge", "entity", "event"]).optional().describe("Filter by category"),
       tags: z.array(z.string()).optional().describe("Filter by tags (entries must match at least one)"),
+      since: z.string().optional().describe("ISO date, return entries created after this"),
+      until: z.string().optional().describe("ISO date, return entries created before this"),
       limit: z.number().optional().describe("Max results to return (default 10)"),
     },
-    async ({ query, kind, tags, limit }) => {
+    async ({ query, kind, category, tags, since, until, limit }) => {
       await ensureIndexed();
 
       const kindFilter = kind ? kind.replace(/s$/, "") : null;
-      const sorted = await hybridSearch(ctx, query, { kindFilter, limit: limit || 10 });
+      const sorted = await hybridSearch(ctx, query, {
+        kindFilter,
+        categoryFilter: category || null,
+        since: since || null,
+        until: until || null,
+        limit: limit || 10,
+      });
 
       // Post-filter by tags if provided
       const filtered = tags?.length
@@ -84,7 +94,7 @@ export function registerTools(server, ctx) {
       const lines = [`## Results for "${query}" (${filtered.length} matches)\n`];
       for (const r of filtered) {
         const meta = r.meta ? JSON.parse(r.meta) : {};
-        lines.push(`### ${r.title || "(untitled)"} [${r.kind}]`);
+        lines.push(`### ${r.title || "(untitled)"} [${r.kind}/${r.category}]`);
         lines.push(`Score: ${r.score.toFixed(3)} | Tags: ${r.tags || "none"} | File: ${r.file_path || "n/a"}`);
         lines.push(r.body?.slice(0, 300) + (r.body?.length > 300 ? "..." : ""));
         lines.push("");
@@ -106,13 +116,20 @@ export function registerTools(server, ctx) {
       meta: z.any().optional().describe("Additional structured metadata (JSON object, e.g. { language: 'js', status: 'accepted' })"),
       folder: z.string().optional().describe("Subfolder within the kind directory (e.g. 'react/hooks')"),
       source: z.string().optional().describe("Where this knowledge came from"),
+      identity_key: z.string().optional().describe("Required for entity kinds (contact, project, tool, source). The unique identifier for this entity."),
+      expires_at: z.string().optional().describe("ISO date for TTL expiry"),
     },
-    async ({ kind, title, body, tags, meta, folder, source }) => {
+    async ({ kind, title, body, tags, meta, folder, source, identity_key, expires_at }) => {
       const vaultErr = ensureVaultExists(config);
       if (vaultErr) return vaultErr;
       const kindErr = ensureValidKind(kind);
       if (kindErr) return kindErr;
       if (!body?.trim()) return err("Required: body (non-empty string)", "INVALID_INPUT");
+
+      // Validate: entity kinds require identity_key
+      if (categoryFor(kind) === "entity" && !identity_key) {
+        return err(`Entity kind "${kind}" requires identity_key`, "MISSING_IDENTITY_KEY");
+      }
 
       await ensureIndexed();
 
@@ -120,7 +137,7 @@ export function registerTools(server, ctx) {
       if (folder) mergedMeta.folder = folder;
       const finalMeta = Object.keys(mergedMeta).length ? mergedMeta : undefined;
 
-      const entry = await captureAndIndex(ctx, { kind, title, body, meta: finalMeta, tags, source, folder }, indexEntry);
+      const entry = await captureAndIndex(ctx, { kind, title, body, meta: finalMeta, tags, source, folder, identity_key, expires_at }, indexEntry);
       return ok(`Saved ${kind} ${entry.id}\nFile: ${entry.filePath}${title ? "\nTitle: " + title : ""}`);
     }
   );
@@ -143,7 +160,7 @@ export function registerTools(server, ctx) {
         `Data dir:  ${config.dataDir}`,
         `Config:    ${config.configPath}`,
         `Resolved via: ${status.resolvedFrom}`,
-        `Schema:    v4 (vault table)`,
+        `Schema:    v5 (categories)`,
         ``,
         `### Indexed`,
       ];
@@ -152,6 +169,12 @@ export function registerTools(server, ctx) {
         for (const { kind, c } of status.kindCounts) lines.push(`- ${c} ${kind}s`);
       } else {
         lines.push(`- (empty)`);
+      }
+
+      if (status.categoryCounts.length) {
+        lines.push(``);
+        lines.push(`### Categories`);
+        for (const { category, c } of status.categoryCounts) lines.push(`- ${category}: ${c}`);
       }
 
       if (status.subdirs.length) {

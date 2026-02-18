@@ -1,134 +1,122 @@
 # Data Categories
 
-Reference for envisioned data types in the vault. Each category maps to a `kind` and has its own expectations around structure, lifecycle, and retrieval.
+Three fundamental categories derived from two irreducible behavioral axes:
 
-This document is descriptive, not prescriptive — it captures how different types of data behave, not how the system must implement them.
+1. **Mutability** — is the data written once (append) or updated in place (upsert)?
+2. **Temporal relevance** — does value endure or decay over time?
+
+|                  | Append-only   | Upsert     |
+|------------------|---------------|------------|
+| **Enduring**     | Knowledge     | Entity     |
+| **Decaying**     | Event         | Entity¹    |
+
+¹ Decaying + upsert is just an Entity with a TTL, not a distinct category.
+
+The `category` determines system behavior — write path, retrieval strategy, lifecycle. The `kind` is a subtype label within a category, useful for filtering and display but not for routing logic.
 
 ---
 
-## Permanent Knowledge
+## Knowledge — what you know
 
-Data that remains valuable indefinitely. No decay, no archival.
+Distilled understanding captured during work. Written once, valuable indefinitely.
 
-### Insights
-
-General discoveries, gotchas, and learnings captured during work.
-
-- **Kind**: `insight`
-- **Sources**: Agent capture during sessions, manual curation
-- **Retrieval**: Semantic search
-
-### Decisions
-
-Architectural or strategic decisions with rationale.
-
-- **Kind**: `decision`
-- **Sources**: Agent capture, manual curation
+- **Write path**: `INSERT` — append-only, never mutated
+- **Identity**: ULID (no external key needed)
 - **Retrieval**: Semantic search, tag filtering
+- **Lifecycle**: No decay, no archival
 
-### Patterns
+### Kinds
 
-Reusable code templates and conventions.
+**`insight`** — Discoveries, gotchas, and learnings.
+General-purpose knowledge captured during sessions or curated manually.
 
-- **Kind**: `pattern`
-- **Sources**: Agent capture, manual curation
-- **Retrieval**: Tag and language filtering, usage-weighted
+**`decision`** — Architectural or strategic decisions with rationale.
+The "why" behind choices. Valuable when revisiting or onboarding.
 
-### Prompts
+**`pattern`** — Reusable code templates and conventions.
+Tagged by language and domain. Retrieved by tag match + semantic relevance.
 
-Effective prompts worth reusing across sessions.
+**`prompt`** — Effective prompts worth reusing across sessions.
+Agent-captured or manually curated.
 
-- **Kind**: `prompt`
-- **Sources**: Agent capture during sessions
-- **Retrieval**: Semantic search, tag filtering
+**`note`** — Freeform text tied to a project or topic.
+Scoped by project tags. The default kind when nothing more specific applies.
 
----
+**`document`** — Long-form documentation, specs, or reference material.
+May require chunking at index time due to length. Structurally identical to other knowledge — chunking is an indexing concern, not a category concern.
 
-## Project Context
-
-Data scoped to a project or engagement. Relevant for weeks to months.
-
-### Notes
-
-Freeform text tied to a project or topic.
-
-- **Kind**: `note`
-- **Sources**: Agent capture, manual creation, import from note apps
-- **Retrieval**: Semantic search, project scoping
-
-### Documents & References
-
-Long-form documentation, specs, or external reference material.
-
-- **Kind**: `document`, `reference`
-- **Sources**: CLI import from directories, web scraping
-- **Retrieval**: Semantic search (may require chunking for long content)
+**`reference`** — External material imported for context.
+Web pages, API docs, third-party specs. Same behavior as `document`.
 
 ---
 
-## Operational Data
+## Entity — what exists
 
-Data with a natural expiration. Relevant for days to weeks, then decays.
+Things in the world that have identity and mutable state. Updated in place when state changes.
 
-### Conversations
+- **Write path**: `INSERT OR REPLACE` on identity key
+- **Identity**: Explicit key per kind (email for contacts, repo+path for source, etc.)
+- **Retrieval**: Exact match on identity key, semantic search as fallback
+- **Lifecycle**: Updated in place; optional TTL for temporary entities
 
-Session history and key exchanges with AI agents.
+### Kinds
 
-- **Kind**: `conversation`
-- **Sources**: Import from conversation exports, agent captures key exchanges
-- **Retrieval**: Temporal and semantic search
+**`contact`** — People: clients, collaborators, vendors.
+Identity key: `email` or `name`. Upsert on match — update existing, never duplicate.
 
-### Emails
+**`project`** — Projects and engagements with current status.
+Identity key: `slug` or `name`. Tracks active state, team, and scope.
 
-Inbound/outbound email content.
+**`tool`** — Tools, services, and integrations in active use.
+Identity key: `name`. Configuration, access notes, and usage context.
 
-- **Kind**: `email`
-- **Sources**: MBOX/EML import, API connectors
-- **Retrieval**: Structured fields (from, to, date) and semantic search
-
-### Messages
-
-Chat messages from Slack, Teams, or similar.
-
-- **Kind**: `message`
-- **Sources**: Export JSON, API connectors
-- **Retrieval**: Channel, temporal, and semantic search
+**`source`** — Key files from codebases: interfaces, configs, important modules.
+Identity key: `repo + path`. Index selectively, not exhaustively. Updated when the source changes.
 
 ---
 
-## Living Data
+## Event — what happened
 
-Data that gets updated in place rather than appended.
+Things that occurred at a point in time. Append-only with timestamps. Relevance decays naturally.
 
-### Contacts
+- **Write path**: `INSERT` — append-only with required timestamp
+- **Identity**: ULID + timestamp (no external key)
+- **Retrieval**: Time-window filter first, then semantic search within window
+- **Lifecycle**: Decays after configurable relevance window; archived or pruned
 
-People — clients, collaborators, vendors.
+### Kinds
 
-- **Kind**: `contact`
-- **Sources**: CSV import, CRM connectors, manual creation
-- **Retrieval**: Exact match (name, email) and semantic search (role, context)
-- **Note**: Needs upsert semantics — update existing, don't duplicate
+**`conversation`** — Session history and key exchanges with AI agents.
+Captured from exports or agent-selected highlights during sessions.
 
-### Source Code
+**`message`** — Chat messages from Slack, Teams, email, or similar.
+Channel and sender are metadata fields, not structural differences. An email and a Slack message are both messages.
 
-Key files from codebases — interfaces, configs, important modules.
+**`session`** — Summary of an agent work session.
+Higher-level than individual messages — captures what was accomplished, not every exchange.
 
-- **Kind**: `source`
-- **Sources**: Selective import from repositories
-- **Retrieval**: Semantic search, language and file path filtering
-- **Note**: Index selectively, not exhaustively
+**`log`** — Build logs, error traces, operational output.
+High volume. May need sampling or aggregation before storage. Short TTL.
 
 ---
 
-## Ephemeral Signals
+## How category drives the system
 
-High-volume, short-lived data. Relevant for hours to days.
+| Concern              | Knowledge              | Entity                          | Event                          |
+|----------------------|------------------------|---------------------------------|--------------------------------|
+| Write semantics      | `INSERT`               | `INSERT OR REPLACE` on key      | `INSERT`                       |
+| Identity             | ULID                   | Explicit key per kind           | ULID + timestamp               |
+| Retrieval default    | Semantic               | Exact match, semantic fallback  | Time-window + semantic         |
+| Decay                | Never                  | Optional TTL                    | Configurable window            |
+| Chunking             | If content exceeds threshold | No                         | If content exceeds threshold   |
+| Embedding            | Full content           | Full content                    | Full content                   |
 
-### Logs & Metrics
+### Adding new kinds
 
-Build logs, error traces, analytics snapshots.
+To decide where a new kind belongs, ask two questions:
 
-- **Kind**: `log`, `metric`
-- **Sources**: CLI import, log file parsing
-- **Retrieval**: Temporal and structured filters
-- **Note**: High volume — may need sampling or aggregation before storage
+1. **Does it have identity that gets updated?** → Entity
+2. **Does its relevance decay over time?** → Event
+3. **Neither?** → Knowledge
+
+A new kind never requires a new category. If it does, the model is wrong.

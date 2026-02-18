@@ -53,7 +53,7 @@ export function parseFrontmatter(text) {
 
 // ─── Extract Custom Meta ────────────────────────────────────────────────────
 
-const RESERVED_FM_KEYS = new Set(["id", "tags", "source", "created"]);
+const RESERVED_FM_KEYS = new Set(["id", "tags", "source", "created", "identity_key", "expires_at"]);
 
 export function extractCustomMeta(fmMeta) {
   const custom = {};
