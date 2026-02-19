@@ -18,7 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { posts } from "../content/posts";
-import { appHref, docsQuickstartUrl } from "../lib/links";
+import { appHref } from "../lib/links";
 
 const proof = [
   { label: "Install time", value: "< 5 min" },
@@ -84,13 +84,7 @@ export function LandingPage() {
                 </a>
               </Button>
               <Button asChild variant="outline" size="lg">
-                <a
-                  href={docsQuickstartUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  See 2-minute setup
-                </a>
+                <Link to="/get-started">See 2-minute setup</Link>
               </Button>
             </div>
           </div>
@@ -257,13 +251,7 @@ export function LandingPage() {
                 </a>
               </Button>
               <Button asChild variant="outline" size="lg">
-                <a
-                  href={docsQuickstartUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  See 2-minute setup
-                </a>
+                <Link to="/get-started">See 2-minute setup</Link>
               </Button>
             </div>
             <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground">

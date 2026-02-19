@@ -55,22 +55,23 @@ const STEP_ICONS: Record<string, React.ElementType> = {
   "connect-tools": Link2,
   "first-entry": Plus,
   "go-hosted": Cloud,
+  "install-extension": ExternalLink,
 };
 
 export function Dashboard() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, vaultMode } = useAuth();
   const navigate = useNavigate();
   const { data: entriesData, isLoading: entriesLoading } = useEntries({ limit: 10 });
   const { data: usage, isLoading: usageLoading } = useUsage();
   const { data: apiKeys } = useApiKeys();
 
   const entriesUsed = usage?.entries.used ?? 0;
-  const isLocalMode = user?.id === "local";
+  const isLocalMode = vaultMode === "local";
   const hasApiKey = (apiKeys?.length ?? 0) > 0;
   const hasMcpActivity = (apiKeys ?? []).some((key) => Boolean(key.lastUsedAt));
   const steps = getOnboardingSteps({
     isAuthenticated,
-    isLocalMode,
+    vaultMode,
     entriesUsed,
     hasApiKey,
     hasMcpActivity,
@@ -103,6 +104,8 @@ export function Dashboard() {
   const handleStepAction = (step: (typeof steps)[0]) => {
     if (step.action === "copy-connect-command") {
       copyConnectCommand();
+    } else if (step.action === "chrome-web-store-link") {
+      window.open("https://chromewebstore.google.com/detail/context-vault", "_blank");
     } else if (step.action?.startsWith("/")) {
       navigate(step.action);
     }

@@ -1,10 +1,10 @@
-import type { OnboardingStep } from "./types";
+import type { OnboardingStep, VaultMode } from "./types";
 
 const DISMISSED_KEY = "context-vault-onboarding-dismissed";
 
 interface OnboardingInputs {
   isAuthenticated: boolean;
-  isLocalMode: boolean;
+  vaultMode: VaultMode;
   entriesUsed: number;
   hasApiKey: boolean;
   hasMcpActivity: boolean;
@@ -12,16 +12,16 @@ interface OnboardingInputs {
 
 export function getOnboardingSteps({
   isAuthenticated,
-  isLocalMode,
+  vaultMode,
   entriesUsed,
   hasApiKey,
   hasMcpActivity,
 }: OnboardingInputs): OnboardingStep[] {
-  if (isLocalMode) {
+  if (vaultMode === "local") {
     return [
       {
         id: "connect-folder",
-        label: "Connect local vault",
+        label: "Locate your vault",
         completed: isAuthenticated,
         description: "Local mode is active for this dashboard session",
         actionLabel: "Connected",
@@ -74,6 +74,14 @@ export function getOnboardingSteps({
       completed: entriesUsed > 0,
       action: "/vault/knowledge",
       actionLabel: "Add entry",
+    },
+    {
+      id: "install-extension",
+      label: "Install Chrome extension",
+      completed: false,
+      description: "Search your vault from ChatGPT, Claude, and Gemini",
+      action: "chrome-web-store-link",
+      actionLabel: "Install",
     },
   ];
 }

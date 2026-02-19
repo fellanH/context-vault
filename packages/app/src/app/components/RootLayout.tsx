@@ -60,7 +60,7 @@ export function RootLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
-  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, logout, vaultMode } = useAuth();
   const { data: usage, isLoading: usageLoading } = useUsage();
   const vaultStatus = useVaultStatus({ enabled: isAuthenticated, refetchInterval: 15000 });
   const [avatarOpen, setAvatarOpen] = useState(false);
@@ -103,7 +103,7 @@ export function RootLayout() {
   const initials = user?.name
     ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
     : user?.email?.[0]?.toUpperCase() || "?";
-  const isLocalMode = user?.id === "local";
+  const isLocalMode = vaultMode === "local";
   const modeLabel = isLocalMode ? "Local" : "Hosted";
   const connectionState = vaultStatus.isError
     ? "Disconnected"

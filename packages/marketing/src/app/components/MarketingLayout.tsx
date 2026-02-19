@@ -24,6 +24,7 @@ function ThemeToggle() {
 export function MarketingLayout() {
   const location = useLocation();
   const onBlog = location.pathname.startsWith("/blog");
+  const onGetStarted = location.pathname === "/get-started";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -36,6 +37,9 @@ export function MarketingLayout() {
           <nav className="flex items-center gap-2">
             <Button asChild variant={onBlog ? "secondary" : "ghost"} size="sm">
               <Link to="/blog">Blog</Link>
+            </Button>
+            <Button asChild variant={onGetStarted ? "secondary" : "ghost"} size="sm">
+              <Link to="/get-started">Get Started</Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
               <a

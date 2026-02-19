@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { AuthContext, type AuthState, getStoredToken, setStoredToken, clearStoredToken } from "../lib/auth";
 import { api, ApiError } from "../lib/api";
 import { transformUser } from "../lib/types";
-import type { User, ApiUserResponse, ApiRegisterResponse } from "../lib/types";
+import type { User, VaultMode, ApiUserResponse, ApiRegisterResponse } from "../lib/types";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(getStoredToken);
@@ -89,10 +89,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const vaultMode: VaultMode = user?.id === "local" ? "local" : "hosted";
+
   const value: AuthState = useMemo(
     () => ({
       user,
       token,
+      vaultMode,
       isAuthenticated: !!token && !!user,
       isLoading,
       loginWithApiKey,
@@ -100,7 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       register,
       logout,
     }),
-    [user, token, isLoading, loginWithApiKey, loginWithLocalVault, register, logout]
+    [user, token, vaultMode, isLoading, loginWithApiKey, loginWithLocalVault, register, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
