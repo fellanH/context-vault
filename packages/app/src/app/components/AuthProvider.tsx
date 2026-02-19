@@ -1,0 +1,86 @@
+import { useState, useCallback, useMemo, useEffect } from "react";
+import { AuthContext, type AuthState, getStoredToken, setStoredToken, clearStoredToken } from "../lib/auth";
+import { api, ApiError } from "../lib/api";
+import { transformUser } from "../lib/types";
+import type { User, ApiUserResponse, ApiRegisterResponse } from "../lib/types";
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [token, setToken] = useState<string | null>(getStoredToken);
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(!!getStoredToken());
+
+  // On mount: revalidate stored token
+  useEffect(() => {
+    const storedToken = getStoredToken();
+    if (!storedToken) {
+      setIsLoading(false);
+      return;
+    }
+
+    api.get<ApiUserResponse>("/me")
+      .then((raw) => {
+        setUser(transformUser(raw));
+      })
+      .catch(() => {
+        clearStoredToken();
+        setToken(null);
+        setUser(null);
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const loginWithApiKey = useCallback(async (key: string) => {
+    // Store key first so the api client can use it
+    setStoredToken(key);
+    setToken(key);
+
+    try {
+      const raw = await api.get<ApiUserResponse>("/me");
+      setUser(transformUser(raw));
+    } catch (err) {
+      // Roll back on failure
+      clearStoredToken();
+      setToken(null);
+      setUser(null);
+      throw err;
+    }
+  }, []);
+
+  const register = useCallback(async (email: string, name?: string) => {
+    const raw = await api.post<ApiRegisterResponse>("/register", { email, name });
+
+    // Store the API key as auth token
+    setStoredToken(raw.apiKey.key);
+    setToken(raw.apiKey.key);
+    setUser({
+      id: raw.userId,
+      email: raw.email,
+      tier: raw.tier,
+      name: name || undefined,
+      createdAt: new Date(),
+    });
+
+    return { apiKey: raw.apiKey.key };
+  }, []);
+
+  const logout = useCallback(() => {
+    clearStoredToken();
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  const value: AuthState = useMemo(
+    () => ({
+      user,
+      token,
+      isAuthenticated: !!token && !!user,
+      isLoading,
+      loginWithApiKey,
+      register,
+      logout,
+    }),
+    [user, token, isLoading, loginWithApiKey, register, logout]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}

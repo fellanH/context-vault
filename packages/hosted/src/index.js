@@ -20,6 +20,7 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { join } from "node:path";
@@ -31,8 +32,8 @@ import { bearerAuth } from "./middleware/auth.js";
 import { rateLimit } from "./middleware/rate-limit.js";
 import { requestLogger } from "./middleware/logger.js";
 import { createManagementRoutes } from "./server/management.js";
-import { encryptForStorage, decryptFromStorage } from "./encryption/vault-crypto.js";
-import { getTierLimits } from "./billing/stripe.js";
+import { createVaultApiRoutes } from "./routes/vault-api.js";
+import { buildUserCtx } from "./server/user-ctx.js";
 import { scheduleBackups, lastBackupTimestamp } from "./backup/r2-backup.js";
 
 // ─── Config ─────────────────────────────────────────────────────────────────
@@ -104,38 +105,11 @@ try {
 // ─── Factory: create MCP server per request ─────────────────────────────────
 
 function createMcpServer(user) {
-  const userId = user?.userId || null;
   const server = new McpServer(
     { name: "context-vault-hosted", version: "0.1.0" },
     { capabilities: { tools: {} } }
   );
-  // Per-request ctx: shares db/stmts/embed but adds user identity
-  // Only set userId when truthy (authenticated) — undefined means local/dev mode (no filtering)
-  const userCtx = userId ? { ...ctx, userId } : ctx;
-
-  // Add encryption/decryption functions when master secret is configured and user is authenticated
-  if (VAULT_MASTER_SECRET && userId) {
-    userCtx.encrypt = (entry) => encryptForStorage(entry, userId, VAULT_MASTER_SECRET);
-    userCtx.decrypt = (row) => decryptFromStorage(row, userId, VAULT_MASTER_SECRET);
-  }
-
-  // Attach tier limits for hosted mode
-  if (userId && user.tier) {
-    const limits = getTierLimits(user.tier);
-    userCtx.checkLimits = () => {
-      const entryCount = ctx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ?").get(userId).c;
-      const storageBytes = ctx.db.prepare(
-        "SELECT COALESCE(SUM(LENGTH(COALESCE(body,'')) + LENGTH(COALESCE(body_encrypted,'')) + LENGTH(COALESCE(title,'')) + LENGTH(COALESCE(meta,''))), 0) as s FROM vault WHERE user_id = ?"
-      ).get(userId).s;
-      return {
-        entryCount,
-        storageMb: storageBytes / (1024 * 1024),
-        maxEntries: limits.maxEntries,
-        maxStorageMb: limits.storageMb,
-      };
-    };
-  }
-
+  const userCtx = buildUserCtx(ctx, user, VAULT_MASTER_SECRET);
   registerTools(server, userCtx);
   return server;
 }
@@ -183,7 +157,7 @@ if (AUTH_REQUIRED && !process.env.CORS_ORIGIN) {
 
 app.use("*", cors({
   origin: corsOrigin,
-  allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization", "mcp-session-id", "Last-Event-ID", "mcp-protocol-version"],
   exposeHeaders: ["mcp-session-id", "mcp-protocol-version", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 }));
@@ -226,6 +200,9 @@ app.get("/health", (c) => {
 // Management REST API (always requires auth)
 app.route("/", createManagementRoutes(ctx));
 
+// Vault REST API (auth + rate limiting applied per-route)
+app.route("/", createVaultApiRoutes(ctx, VAULT_MASTER_SECRET));
+
 // MCP endpoint — optionally auth-protected
 if (AUTH_REQUIRED) {
   app.all("/mcp", bearerAuth(), rateLimit(), async (c) => {
@@ -265,6 +242,20 @@ if (AUTH_REQUIRED) {
     }
   });
 }
+
+// ─── Static App Serving ──────────────────────────────────────────────────────
+
+// Serve the frontend app from packages/app/dist (built by Vite)
+// This must come after all API + MCP routes so they take priority
+app.use("/*", serveStatic({ root: "./packages/app/dist" }));
+// SPA fallback: serve index.html for non-API/MCP routes (client-side routing)
+app.get("*", (c, next) => {
+  const path = c.req.path;
+  if (path.startsWith("/api/") || path.startsWith("/mcp") || path === "/health") {
+    return next();
+  }
+  return serveStatic({ path: "./packages/app/dist/index.html" })(c, next);
+});
 
 // ─── Start Server ───────────────────────────────────────────────────────────
 

@@ -29,6 +29,19 @@ echo ""
 
 # ─── Basic Endpoints ──────────────────────────────────────────────────────────
 
+# Root app
+check "GET / returns 200" "200" "$BASE/"
+
+# Root HTML shape
+ROOT_BODY=$(curl -s --max-time 5 "$BASE/")
+if echo "$ROOT_BODY" | grep -q '<div id="root"'; then
+  echo "  PASS: / includes app root container"
+  ((PASS++))
+else
+  echo "  FAIL: / missing app root container"
+  ((FAIL++))
+fi
+
 # Health check
 check "GET /health returns 200" "200" "$BASE/health"
 
@@ -59,6 +72,12 @@ check "POST /mcp without auth returns 401" "401" "$BASE/mcp" \
 # Registration without email returns 400
 check "POST /api/register without email returns 400" "400" "$BASE/api/register" \
   -X POST -H "Content-Type: application/json" -d '{}'
+
+# OpenAPI schema endpoint
+check "GET /api/vault/openapi.json returns 200" "200" "$BASE/api/vault/openapi.json"
+
+# Privacy policy endpoint
+check "GET /privacy returns 200" "200" "$BASE/privacy"
 
 # Management API without auth returns 401
 check "GET /api/keys without auth returns 401" "401" "$BASE/api/keys"

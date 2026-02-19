@@ -8,7 +8,7 @@
 Persistent memory for AI agents — saves and searches knowledge across sessions.
 
 <p align="center">
-  <img src="assets/demo.gif" alt="context-vault demo — Claude Code and Cursor using the knowledge vault" width="800">
+  <img src="demo.gif" alt="context-vault demo — Claude Code and Cursor using the knowledge vault" width="800">
 </p>
 
 ## Quick Start
@@ -21,6 +21,8 @@ context-mcp setup
 Setup auto-detects your tools (Claude Code, Claude Desktop, Cursor, Windsurf, Cline), downloads the embedding model, seeds your vault with a starter entry, and verifies everything works. Then open your AI tool and try:
 
 > "Search my vault for getting started"
+
+For hosted MCP setup (Claude Code, Cursor, GPT Actions), see [`docs/distribution/connect-in-2-minutes.md`](./docs/distribution/connect-in-2-minutes.md).
 
 ## What It Does
 
@@ -118,7 +120,7 @@ Shows vault path, database size, file counts per kind, embedding coverage, and a
 | `context-mcp status` | Show vault health, paths, and entry counts |
 | `context-mcp reindex` | Rebuild search index from vault files |
 | `context-mcp update` | Check for and install updates |
-| `context-mcp ui` | Launch web dashboard |
+| `context-mcp ui` | Launch web dashboard (uses `packages/app`) |
 
 ### AI Tool Examples
 
@@ -276,7 +278,7 @@ context-mcp <command> [options]
 |---------|-------------|
 | `setup` | Interactive MCP installer — detects tools, writes configs |
 | `serve` | Start the MCP server (used by AI clients in MCP configs) |
-| `ui [--port 3141]` | Launch the web dashboard |
+| `ui [--port 3141]` | Launch the web dashboard (serves `packages/app`) |
 | `reindex` | Rebuild search index from knowledge files |
 | `status` | Show vault diagnostics (paths, counts, health) |
 
@@ -298,11 +300,14 @@ The `setup` command auto-detects installed tools (Claude Code, Claude Desktop, C
 ```bash
 git clone https://github.com/fellanH/context-mcp.git
 cd context-mcp
+nvm use
 npm install
 
 # Interactive setup — detects your tools and configures them
 node bin/cli.js setup
 ```
+
+The repository pins Node.js `20` in `.nvmrc` for consistent local and CI builds.
 
 For non-interactive environments (CI, scripts):
 
@@ -366,15 +371,9 @@ This means:
 - **Embedding model** is downloaded during `setup` (~22MB, all-MiniLM-L6-v2). If setup was skipped, it downloads on first use.
 - **Auto-reindex** on first tool call per session ensures the search index is always in sync with your files on disk. No manual reindex needed.
 
-## Desktop App (macOS)
+## Web Dashboard
 
-A macOS dock application that starts the UI server and opens the dashboard in your browser.
-
-```bash
-osacompile -o "/Applications/Context.app" ui/Context.applescript
-```
-
-The app checks if port 3141 is already in use, starts the server if not, and opens `http://localhost:3141`. Server logs are written to `/tmp/context-mcp.log`.
+The web dashboard is built with React and Vite in `packages/app`. It provides a full UI for browsing, searching, and managing your vault entries. The `context-mcp ui` command serves the built app from `packages/app/dist`.
 
 ## How It Works
 
@@ -413,10 +412,10 @@ src/
 bin/
 └── cli.js               CLI entry point (setup, serve, ui, reindex, status)
 
-ui/
-├── serve.js             HTTP server for web dashboard
-├── index.html           Single-page dashboard UI
-└── Context.applescript  macOS dock app launcher
+packages/app/
+├── src/                 React app source (Vite + React Router)
+├── dist/                Built static assets (served by `ui` command)
+└── vite.config.ts       Vite configuration
 ```
 
 Each layer has a single responsibility and can be understood independently. The server is the only module that imports across layer boundaries.
@@ -428,7 +427,7 @@ core/files.js, core/frontmatter.js  ←  capture/
                                               ↑
 core/config.js                          server/  ←  bin/cli.js
                                               ↑
-index/embed.js  ←  retrieve/        ←   ui/serve.js
+index/embed.js  ←  retrieve/        ←   packages/app/ (web dashboard)
                                               ↑
 index/db.js     ←──────────────────  (all consumers)
 ```

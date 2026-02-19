@@ -12,13 +12,37 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm test
 
-  deploy-staging:
+  build-app:
     needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/app
+
+  build-extension:
+    needs: build-app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace=packages/extension
+
+  deploy-staging:
+    needs: build-extension
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
@@ -28,8 +52,27 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-  smoke-staging:
+  health-staging:
     needs: deploy-staging
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for staging health
+        run: |
+          set -euo pipefail
+          URL="https://context-vault-staging.fly.dev/health"
+          for i in {1..30}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$URL" || true)
+            if [ "$code" = "200" ]; then
+              echo "Staging healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Staging health check failed"
+          exit 1
+
+  smoke-staging:
+    needs: health-staging
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

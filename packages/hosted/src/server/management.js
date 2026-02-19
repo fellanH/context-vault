@@ -21,18 +21,8 @@ import { indexEntry } from "@context-vault/core/index";
 import { generateDek, clearDekCache } from "../encryption/keys.js";
 import { decryptFromStorage } from "../encryption/vault-crypto.js";
 import { unlinkSync } from "node:fs";
+import { validateEntryInput } from "../validation/entry-validation.js";
 
-// ─── Validation Constants ────────────────────────────────────────────────────
-
-const MAX_BODY_LENGTH = 100 * 1024; // 100KB
-const MAX_TITLE_LENGTH = 500;
-const MAX_KIND_LENGTH = 64;
-const MAX_TAG_LENGTH = 100;
-const MAX_TAGS_COUNT = 20;
-const MAX_META_LENGTH = 10 * 1024; // 10KB
-const MAX_SOURCE_LENGTH = 200;
-const MAX_IDENTITY_KEY_LENGTH = 200;
-const KIND_PATTERN = /^[a-z0-9-]+$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ─── Registration Rate Limiting (SQLite-backed, survives restarts) ───────────
@@ -91,6 +81,26 @@ export function createManagementRoutes(ctx) {
     if (!header?.startsWith("Bearer ")) return null;
     return validateApiKey(header.slice(7));
   }
+
+  // ─── Current User ─────────────────────────────────────────────────────────
+
+  /** Return the authenticated user's profile */
+  api.get("/api/me", (c) => {
+    const user = requireAuth(c);
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+    const stmts = prepareMetaStatements(getMetaDb());
+    const row = stmts.getUserById.get(user.userId);
+    if (!row) return c.json({ error: "User not found" }, 404);
+
+    return c.json({
+      userId: row.id,
+      email: row.email,
+      name: row.name || null,
+      tier: row.tier,
+      createdAt: row.created_at,
+    });
+  });
 
   // ─── API Keys ───────────────────────────────────────────────────────────────
 
@@ -400,50 +410,9 @@ export function createManagementRoutes(ctx) {
 
     const data = await c.req.json().catch(() => null);
     if (!data) return c.json({ error: "Invalid JSON body" }, 400);
-    if (!data.body) return c.json({ error: "body is required" }, 400);
-    if (!data.kind) return c.json({ error: "kind is required" }, 400);
 
-    // ── Input validation ──────────────────────────────────────────────────
-    if (typeof data.kind !== "string" || data.kind.length > MAX_KIND_LENGTH || !KIND_PATTERN.test(data.kind)) {
-      return c.json({ error: `kind must be lowercase alphanumeric/hyphens, max ${MAX_KIND_LENGTH} chars` }, 400);
-    }
-    if (typeof data.body !== "string" || data.body.length > MAX_BODY_LENGTH) {
-      return c.json({ error: `body must be a string, max ${MAX_BODY_LENGTH / 1024}KB` }, 400);
-    }
-    if (data.title !== undefined && data.title !== null) {
-      if (typeof data.title !== "string" || data.title.length > MAX_TITLE_LENGTH) {
-        return c.json({ error: `title must be a string, max ${MAX_TITLE_LENGTH} chars` }, 400);
-      }
-    }
-    if (data.tags !== undefined && data.tags !== null) {
-      if (!Array.isArray(data.tags)) {
-        return c.json({ error: "tags must be an array of strings" }, 400);
-      }
-      if (data.tags.length > MAX_TAGS_COUNT) {
-        return c.json({ error: `tags: max ${MAX_TAGS_COUNT} tags allowed` }, 400);
-      }
-      for (const tag of data.tags) {
-        if (typeof tag !== "string" || tag.length > MAX_TAG_LENGTH) {
-          return c.json({ error: `each tag must be a string, max ${MAX_TAG_LENGTH} chars` }, 400);
-        }
-      }
-    }
-    if (data.meta !== undefined && data.meta !== null) {
-      const metaStr = JSON.stringify(data.meta);
-      if (metaStr.length > MAX_META_LENGTH) {
-        return c.json({ error: `meta must be under ${MAX_META_LENGTH / 1024}KB when serialized` }, 400);
-      }
-    }
-    if (data.source !== undefined && data.source !== null) {
-      if (typeof data.source !== "string" || data.source.length > MAX_SOURCE_LENGTH) {
-        return c.json({ error: `source must be a string, max ${MAX_SOURCE_LENGTH} chars` }, 400);
-      }
-    }
-    if (data.identity_key !== undefined && data.identity_key !== null) {
-      if (typeof data.identity_key !== "string" || data.identity_key.length > MAX_IDENTITY_KEY_LENGTH) {
-        return c.json({ error: `identity_key must be a string, max ${MAX_IDENTITY_KEY_LENGTH} chars` }, 400);
-      }
-    }
+    const validationError = validateEntryInput(data);
+    if (validationError) return c.json({ error: validationError.error }, validationError.status);
 
     // ── Entry limit enforcement (per-user) ─────────────────────────────────
     const { c: entryCount } = ctx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ?").get(user.userId);

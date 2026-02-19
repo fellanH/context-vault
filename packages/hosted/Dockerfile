@@ -1,3 +1,17 @@
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+COPY packages/core/ packages/core/
+COPY packages/app/ packages/app/
+COPY packages/hosted/ packages/hosted/
+
+RUN npm install --workspace=packages/app --workspace=packages/hosted
+RUN npm run build --workspace=packages/app
+
+# ─── Production image ────────────────────────────────────────────────────────
+
 FROM node:20-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
@@ -10,6 +24,9 @@ COPY package*.json ./
 COPY packages/core/ packages/core/
 COPY packages/hosted/ packages/hosted/
 RUN npm install --workspace=packages/hosted --omit=dev
+
+# Copy built frontend from builder stage
+COPY --from=builder /app/packages/app/dist/ packages/app/dist/
 
 RUN mkdir -p /data && chown vault:vault /data
 

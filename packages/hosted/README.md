@@ -86,15 +86,17 @@ curl http://localhost:3000/api/billing/usage \
 
 ### Hosting Architecture
 
-Recommended split for the full context-vault SaaS stack:
+Recommended production setup is a single Fly.io app:
 
-| App | Platform | Why |
-|-----|----------|-----|
-| Hosted MCP server | **Fly.io** | Long-running HTTP server, persistent SQLite volumes, MCP streaming |
-| Marketing site | **Vercel** | Static/SSG, edge delivery, preview deploys |
-| Admin dashboard | **Vercel** | SPA/Next.js calling the hosted API, familiar Vercel DX |
+| Surface | Route | Served by |
+|---------|-------|-----------|
+| Hosted web app (SPA) | `/` | Hono static serving (`packages/app/dist`) |
+| Hosted REST API | `/api/*` | Hono routes |
+| MCP endpoint | `/mcp` | Streamable HTTP MCP transport |
+| OpenAPI schema | `/api/vault/openapi.json` | Public route |
+| Privacy policy | `/privacy` | Public route |
 
-The hosted server exposes CORS for browser clients. The dashboard authenticates with `Bearer cv_...` (or your auth provider) and calls the Fly-hosted API.
+This keeps onboarding and API usage on one canonical origin (for example `https://www.context-vault.com`).
 
 ### Fly.io (recommended)
 

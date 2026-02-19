@@ -2,6 +2,28 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.4.1] — 2026-02-19
+
+### Changed
+- Deprecated `/ui/` directory in favor of `packages/app` React application
+- Updated README.md to reflect new web dashboard architecture
+- Removed deprecated UI files (Context.applescript, index.html, serve.js)
+
+### Fixed
+- Removed deprecated `ui/` reference from published package files array
+
+## [2.4.0] — 2026-02-18
+
+### Added
+- Hardening release with native module resilience and graceful degradation
+- Cross-platform support improvements
+- Production readiness features: R2 backups, CORS lockdown, Sentry hardening
+- Persistent rate limits and staging CI/CD
+
+### Improved
+- Native module build resilience
+- Graceful degradation for missing dependencies
+
 ## [2.3.0] — 2026-02-18
 
 ### Added
