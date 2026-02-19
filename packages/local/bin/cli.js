@@ -1173,13 +1173,13 @@ async function runMigrate() {
     console.log(`    context-vault migrate --to-hosted  Upload local vault to hosted service`);
     console.log(`    context-vault migrate --to-local   Download hosted vault to local files`);
     console.log(`\n  Options:`);
-    console.log(`    --url <url>      Hosted server URL (default: https://vault.contextvault.dev)`);
+    console.log(`    --url <url>      Hosted server URL (default: https://www.context-vault.com)`);
     console.log(`    --key <key>      API key (cv_...)`);
     console.log();
     return;
   }
 
-  const hostedUrl = getFlag("--url") || "https://vault.contextvault.dev";
+  const hostedUrl = getFlag("--url") || "https://www.context-vault.com";
   const apiKey = getFlag("--key");
 
   if (!apiKey) {
