@@ -45,7 +45,7 @@ export function registerTools(server, ctx) {
         ]);
       } catch (e) {
         if (e.message === "TOOL_TIMEOUT") {
-          return err("Tool timed out after 60s. Try a simpler query or run `context-mcp reindex` first.", "TIMEOUT");
+          return err("Tool timed out after 60s. Try a simpler query or run `context-vault reindex` first.", "TIMEOUT");
         }
         throw e;
       } finally {
@@ -72,14 +72,14 @@ export function registerTools(server, ctx) {
         reindexDone = true;
         const total = stats.added + stats.updated + stats.removed;
         if (total > 0) {
-          console.error(`[context-mcp] Auto-reindex: +${stats.added} ~${stats.updated} -${stats.removed} (${stats.unchanged} unchanged)`);
+          console.error(`[context-vault] Auto-reindex: +${stats.added} ~${stats.updated} -${stats.removed} (${stats.unchanged} unchanged)`);
         }
       })
       .catch((e) => {
         reindexAttempts++;
-        console.error(`[context-mcp] Auto-reindex failed (attempt ${reindexAttempts}/${MAX_REINDEX_ATTEMPTS}): ${e.message}`);
+        console.error(`[context-vault] Auto-reindex failed (attempt ${reindexAttempts}/${MAX_REINDEX_ATTEMPTS}): ${e.message}`);
         if (reindexAttempts >= MAX_REINDEX_ATTEMPTS) {
-          console.error(`[context-mcp] Giving up on auto-reindex. Run \`context-mcp reindex\` manually to diagnose.`);
+          console.error(`[context-vault] Giving up on auto-reindex. Run \`context-vault reindex\` manually to diagnose.`);
           reindexDone = true;
           reindexFailed = true;
         } else {
@@ -203,8 +203,8 @@ export function registerTools(server, ctx) {
       }
 
       const lines = [];
-      if (reindexFailed) lines.push(`> **Warning:** Auto-reindex failed. Results may be stale. Run \`context-mcp reindex\` to fix.\n`);
-      if (hasQuery && isEmbedAvailable() === false) lines.push(`> **Note:** Semantic search unavailable — results ranked by keyword match only. Run \`context-mcp setup\` to download the embedding model.\n`);
+      if (reindexFailed) lines.push(`> **Warning:** Auto-reindex failed. Results may be stale. Run \`context-vault reindex\` to fix.\n`);
+      if (hasQuery && isEmbedAvailable() === false) lines.push(`> **Note:** Semantic search unavailable — results ranked by keyword match only. Run \`context-vault setup\` to download the embedding model.\n`);
       const heading = hasQuery ? `Results for "${query}"` : "Filtered entries";
       lines.push(`## ${heading} (${filtered.length} matches)\n`);
       for (let i = 0; i < filtered.length; i++) {
@@ -382,7 +382,9 @@ export function registerTools(server, ctx) {
 
       if (!filtered.length) return ok("No entries found matching the given filters.");
 
-      const lines = [`## Vault Entries (${filtered.length} shown, ${total} total)\n`];
+      const lines = [];
+      if (reindexFailed) lines.push(`> **Warning:** Auto-reindex failed. Results may be stale. Run \`context-vault reindex\` to fix.\n`);
+      lines.push(`## Vault Entries (${filtered.length} shown, ${total} total)\n`);
       for (const r of filtered) {
         const entryTags = r.tags ? JSON.parse(r.tags) : [];
         const tagStr = entryTags.length ? entryTags.join(", ") : "none";
@@ -486,7 +488,7 @@ export function registerTools(server, ctx) {
       const healthIcon = hasIssues ? "⚠" : "✓";
 
       const lines = [
-        `## ${healthIcon} Vault Status`,
+        `## ${healthIcon} Vault Status (connected)`,
         ``,
         `Vault:     ${config.vaultDir} (${config.vaultDirExists ? status.fileCount + " files" : "missing"})`,
         `Database:  ${config.dbPath} (${status.dbSize})`,
@@ -541,9 +543,9 @@ export function registerTools(server, ctx) {
 
       // Suggested actions
       const actions = [];
-      if (status.stalePaths) actions.push("- Run `context-mcp reindex` to fix stale paths");
-      if (status.embeddingStatus?.missing > 0) actions.push("- Run `context-mcp reindex` to generate missing embeddings");
-      if (!config.vaultDirExists) actions.push("- Run `context-mcp setup` to create the vault directory");
+      if (status.stalePaths) actions.push("- Run `context-vault reindex` to fix stale paths");
+      if (status.embeddingStatus?.missing > 0) actions.push("- Run `context-vault reindex` to generate missing embeddings");
+      if (!config.vaultDirExists) actions.push("- Run `context-vault setup` to create the vault directory");
       if (status.kindCounts.length === 0 && config.vaultDirExists) actions.push("- Use `save_context` to add your first entry");
 
       if (actions.length) {

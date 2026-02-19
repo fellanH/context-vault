@@ -146,7 +146,7 @@ export async function initDatabase(dbPath) {
 
   // Enforce fresh-DB-only — old schemas get a full rebuild (with backup)
   if (version > 0 && version < 5) {
-    console.error(`[context-mcp] Schema v${version} is outdated. Rebuilding database...`);
+    console.error(`[context-vault] Schema v${version} is outdated. Rebuilding database...`);
 
     // Backup old DB before destroying it
     const backupPath = `${dbPath}.v${version}.backup`;
@@ -154,10 +154,10 @@ export async function initDatabase(dbPath) {
       db.close();
       if (existsSync(dbPath)) {
         copyFileSync(dbPath, backupPath);
-        console.error(`[context-mcp] Backed up old database to: ${backupPath}`);
+        console.error(`[context-vault] Backed up old database to: ${backupPath}`);
       }
     } catch (backupErr) {
-      console.error(`[context-mcp] Warning: could not backup old database: ${backupErr.message}`);
+      console.error(`[context-vault] Warning: could not backup old database: ${backupErr.message}`);
     }
 
     unlinkSync(dbPath);
@@ -218,7 +218,7 @@ export function prepareStatements(db) {
   } catch (e) {
     throw new Error(
       `Failed to prepare database statements. The database may be corrupted.\n` +
-      `Try deleting and rebuilding: rm "${db.name}" && context-mcp reindex\n` +
+      `Try deleting and rebuilding: rm "${db.name}" && context-vault reindex\n` +
       `Original error: ${e.message}`
     );
   }

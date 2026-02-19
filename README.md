@@ -1,4 +1,4 @@
-# context-mcp
+# context-vault
 
 [![npm version](https://img.shields.io/npm/v/context-vault)](https://www.npmjs.com/package/context-vault)
 [![npm downloads](https://img.shields.io/npm/dm/context-vault)](https://www.npmjs.com/package/context-vault)
@@ -15,7 +15,7 @@ Persistent memory for AI agents — saves and searches knowledge across sessions
 
 ```bash
 npm install -g context-vault
-context-mcp setup
+context-vault setup
 ```
 
 Setup auto-detects your tools (Claude Code, Claude Desktop, Cursor, Windsurf, Cline), downloads the embedding model, seeds your vault with a starter entry, and verifies everything works. Then open your AI tool and try:
@@ -23,6 +23,8 @@ Setup auto-detects your tools (Claude Code, Claude Desktop, Cursor, Windsurf, Cl
 > "Search my vault for getting started"
 
 For hosted MCP setup (Claude Code, Cursor, GPT Actions), see [`docs/distribution/connect-in-2-minutes.md`](./docs/distribution/connect-in-2-minutes.md).
+
+> **Note:** `context-mcp` still works as a CLI alias but `context-vault` is the primary command.
 
 ## What It Does
 
@@ -116,11 +118,11 @@ Shows vault path, database size, file counts per kind, embedding coverage, and a
 
 | Command | Description |
 |---------|-------------|
-| `context-mcp setup` | Interactive installer — detects tools, writes configs |
-| `context-mcp status` | Show vault health, paths, and entry counts |
-| `context-mcp reindex` | Rebuild search index from vault files |
-| `context-mcp update` | Check for and install updates |
-| `context-mcp ui` | Launch web dashboard (uses `packages/app`) |
+| `context-vault setup` | Interactive installer — detects tools, writes configs |
+| `context-vault status` | Show vault health, paths, and entry counts |
+| `context-vault reindex` | Rebuild search index from vault files |
+| `context-vault update` | Check for and install updates |
+| `context-vault ui` | Launch web dashboard (uses `packages/app`) |
 
 ### AI Tool Examples
 
@@ -254,24 +256,26 @@ Lives in the data directory alongside the database. Created by `setup`, or creat
 
 ### Environment Variables
 
+Both `CONTEXT_VAULT_*` and `CONTEXT_MCP_*` prefixes are supported. The `CONTEXT_VAULT_*` prefix takes priority.
+
 | Variable | Overrides |
 |----------|-----------|
-| `CONTEXT_MCP_VAULT_DIR` | Vault directory (knowledge files) |
-| `CONTEXT_MCP_DB_PATH` | Database path |
-| `CONTEXT_MCP_DEV_DIR` | Dev directory |
-| `CONTEXT_MCP_DATA_DIR` | Data directory (DB + config storage) |
+| `CONTEXT_VAULT_VAULT_DIR` / `CONTEXT_MCP_VAULT_DIR` | Vault directory (knowledge files) |
+| `CONTEXT_VAULT_DB_PATH` / `CONTEXT_MCP_DB_PATH` | Database path |
+| `CONTEXT_VAULT_DEV_DIR` / `CONTEXT_MCP_DEV_DIR` | Dev directory |
+| `CONTEXT_VAULT_DATA_DIR` / `CONTEXT_MCP_DATA_DIR` | Data directory (DB + config storage) |
 
 ### CLI Arguments
 
 ```bash
-context-mcp serve --vault-dir /custom/vault --dev-dir /custom/dev
-context-mcp serve --data-dir /custom/data --db-path /custom/data/vault.db
+context-vault serve --vault-dir /custom/vault --dev-dir /custom/dev
+context-vault serve --data-dir /custom/data --db-path /custom/data/vault.db
 ```
 
 ## CLI
 
 ```bash
-context-mcp <command> [options]
+context-vault <command> [options]
 ```
 
 | Command | Description |
@@ -282,7 +286,7 @@ context-mcp <command> [options]
 | `reindex` | Rebuild search index from knowledge files |
 | `status` | Show vault diagnostics (paths, counts, health) |
 
-If running from source without a global install, use `npx context-mcp` or `npm run cli --` instead of `context-mcp`.
+If running from source without a global install, use `npx context-vault` or `npm run cli --` instead of `context-vault`.
 
 ## Install
 
@@ -290,10 +294,10 @@ If running from source without a global install, use `npx context-mcp` or `npm r
 
 ```bash
 npm install -g context-vault
-context-mcp setup
+context-vault setup
 ```
 
-The `setup` command auto-detects installed tools (Claude Code, Claude Desktop, Cursor, Windsurf, Cline), lets you pick which to configure, and writes the correct MCP config for each. Existing configs are preserved — only the `context-mcp` entry is added or updated.
+The `setup` command auto-detects installed tools (Claude Code, Claude Desktop, Cursor, Windsurf, Cline), lets you pick which to configure, and writes the correct MCP config for each. Existing configs are preserved — only the `context-vault` entry is added or updated.
 
 ### Local Development
 
@@ -312,7 +316,7 @@ The repository pins Node.js `20` in `.nvmrc` for consistent local and CI builds.
 For non-interactive environments (CI, scripts):
 
 ```bash
-context-mcp setup --yes
+context-vault setup --yes
 ```
 
 ### Manual Configuration
@@ -324,8 +328,8 @@ If you prefer manual setup, add to your tool's MCP config. Pass `--vault-dir` to
 ```json
 {
   "mcpServers": {
-    "context-mcp": {
-      "command": "context-mcp",
+    "context-vault": {
+      "command": "context-vault",
       "args": ["serve", "--vault-dir", "/path/to/vault"]
     }
   }
@@ -337,7 +341,7 @@ If you prefer manual setup, add to your tool's MCP config. Pass `--vault-dir` to
 ```json
 {
   "mcpServers": {
-    "context-mcp": {
+    "context-vault": {
       "command": "node",
       "args": ["/path/to/context-mcp/packages/local/src/server/index.js", "--vault-dir", "/path/to/vault"]
     }
@@ -350,11 +354,11 @@ You can also pass config via environment variables in the MCP config block:
 ```json
 {
   "mcpServers": {
-    "context-mcp": {
-      "command": "context-mcp",
+    "context-vault": {
+      "command": "context-vault",
       "args": ["serve"],
       "env": {
-        "CONTEXT_MCP_VAULT_DIR": "/path/to/vault"
+        "CONTEXT_VAULT_VAULT_DIR": "/path/to/vault"
       }
     }
   }
@@ -373,7 +377,7 @@ This means:
 
 ## Web Dashboard
 
-The web dashboard is built with React and Vite in `packages/app`. It provides a full UI for browsing, searching, and managing your vault entries. The `context-mcp ui` command serves the built app from `packages/app/dist`.
+The web dashboard is built with React and Vite in `packages/app`. It provides a full UI for browsing, searching, and managing your vault entries. The `context-vault ui` command serves the built app from `packages/app/dist`.
 
 The standalone marketing website lives in `packages/marketing` (landing page + blog) and is intentionally isolated from the product dashboard app.
 
@@ -397,7 +401,7 @@ Human-editable, git-versioned        Fast hybrid search, RAG-ready
 You own these files                  Rebuilt from files anytime
 ```
 
-The SQLite database is stored at `~/.context-mcp/vault.db` by default (configurable via `--db-path`, `CONTEXT_MCP_DB_PATH`, or `config.json`). It contains FTS5 full-text indexes and sqlite-vec embeddings (384-dim float32, all-MiniLM-L6-v2). The database is a derived index — delete it and the server rebuilds it automatically on next session.
+The SQLite database is stored at `~/.context-mcp/vault.db` by default (configurable via `--db-path`, `CONTEXT_VAULT_DB_PATH`, or `config.json`). It contains FTS5 full-text indexes and sqlite-vec embeddings (384-dim float32, all-MiniLM-L6-v2). The database is a derived index — delete it and the server rebuilds it automatically on next session.
 
 Requires **Node.js 20** or later.
 
@@ -456,22 +460,22 @@ On Apple Silicon Macs, ensure you're running a native ARM Node.js (not Rosetta).
 If `context_status` or `get_context` reports the vault directory doesn't exist:
 
 ```bash
-context-mcp status    # Shows resolved paths
+context-vault status    # Shows resolved paths
 mkdir -p ~/vault      # Create the default vault directory
 ```
 
-Or re-run `context-mcp setup` to reconfigure.
+Or re-run `context-vault setup` to reconfigure.
 
 ### Embedding model download
 
-The embedding model (all-MiniLM-L6-v2, ~22MB) is normally downloaded during `context-mcp setup`. If setup was skipped or the cache was cleared, it downloads automatically on first use. If it hangs, check your network or proxy settings.
+The embedding model (all-MiniLM-L6-v2, ~22MB) is normally downloaded during `context-vault setup`. If setup was skipped or the cache was cleared, it downloads automatically on first use. If it hangs, check your network or proxy settings.
 
 ### Stale search index
 
 If search results seem outdated or missing:
 
 ```bash
-context-mcp reindex
+context-vault reindex
 ```
 
 This rebuilds the entire index from your vault files. Auto-reindex runs on every session start, but manual reindex can help diagnose issues.
@@ -479,7 +483,7 @@ This rebuilds the entire index from your vault files. Auto-reindex runs on every
 ### Config path debugging
 
 ```bash
-context-mcp status
+context-vault status
 ```
 
 Shows all resolved paths (vault dir, data dir, DB path, config file) and where each was resolved from (defaults, config file, env, or CLI args).

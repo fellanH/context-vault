@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * context-mcp CLI — Unified entry point
+ * context-vault CLI — Unified entry point
  *
  * Usage:
- *   context-mcp setup              Interactive MCP installer
- *   context-mcp ui [--port 3141]   Launch web dashboard
- *   context-mcp reindex            Rebuild search index
- *   context-mcp status             Show vault diagnostics
+ *   context-vault setup              Interactive MCP installer
+ *   context-vault ui [--port 3141]   Launch web dashboard
+ *   context-vault reindex            Rebuild search index
+ *   context-vault status             Show vault diagnostics
  */
 
 import { createInterface } from "node:readline";
@@ -23,6 +23,7 @@ import { join, resolve, dirname } from "node:path";
 import { homedir, platform } from "node:os";
 import { execSync, fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { createServer as createNetServer } from "node:net";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -184,7 +185,7 @@ function showHelp() {
   ${dim("Persistent memory for AI agents")}
 
 ${bold("Usage:")}
-  context-mcp <command> [options]
+  context-vault <command> [options]
 
 ${bold("Commands:")}
   ${cyan("setup")}                 Interactive MCP server installer
@@ -259,7 +260,7 @@ async function runSetup() {
       }
 
       let selected;
-      console.log(bold("  Which tools should context-mcp connect to?\n"));
+      console.log(bold("  Which tools should context-vault connect to?\n"));
       for (let i = 0; i < detected.length; i++) {
         console.log(`    ${i + 1}) ${detected[i].name}`);
       }
@@ -333,8 +334,8 @@ async function runSetup() {
     if (isInstalledPackage()) {
       console.log(`  ${dim("{")}
     ${dim('"mcpServers": {')}
-      ${dim('"context-mcp": {')}
-        ${dim('"command": "context-mcp",')}
+      ${dim('"context-vault": {')}
+        ${dim('"command": "context-vault",')}
         ${dim(`"args": ["serve", "--vault-dir", "/path/to/vault"]`)}
       ${dim("}")}
     ${dim("}")}
@@ -342,7 +343,7 @@ async function runSetup() {
     } else {
       console.log(`  ${dim("{")}
     ${dim('"mcpServers": {')}
-      ${dim('"context-mcp": {')}
+      ${dim('"context-vault": {')}
         ${dim('"command": "node",')}
         ${dim(`"args": ["${SERVER_PATH}", "--vault-dir", "/path/to/vault"]`)}
       ${dim("}")}
@@ -357,7 +358,7 @@ async function runSetup() {
   if (isNonInteractive) {
     selected = detected;
   } else {
-    console.log(bold("  Which tools should context-mcp connect to?\n"));
+    console.log(bold("  Which tools should context-vault connect to?\n"));
     for (let i = 0; i < detected.length; i++) {
       console.log(`    ${i + 1}) ${detected[i].name}`);
     }
@@ -424,15 +425,30 @@ async function runSetup() {
   writeFileSync(configPath, JSON.stringify(vaultConfig, null, 2) + "\n");
   console.log(`\n  ${green("+")} Wrote ${configPath}`);
 
-  // Pre-download embedding model
+  // Pre-download embedding model with spinner
   console.log(`\n  ${dim("[3/5]")}${bold(" Downloading embedding model...")}`);
   console.log(dim("  all-MiniLM-L6-v2 (~22MB, one-time download)\n"));
-  try {
-    const { embed } = await import("@context-vault/core/index/embed");
-    await embed("warmup");
-    console.log(`  ${green("+")} Embedding model ready`);
-  } catch (e) {
-    console.log(`  ${yellow("!")} Model download failed — will retry on first use`);
+  {
+    const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let frame = 0;
+    const start = Date.now();
+    const spinner = setInterval(() => {
+      const elapsed = ((Date.now() - start) / 1000).toFixed(0);
+      process.stdout.write(`\r  ${spinnerFrames[frame++ % spinnerFrames.length]} Downloading... ${dim(`${elapsed}s`)}`);
+    }, 100);
+
+    try {
+      const { embed } = await import("@context-vault/core/index/embed");
+      await embed("warmup");
+
+      clearInterval(spinner);
+      process.stdout.write(`\r  ${green("+")} Embedding model ready              \n`);
+    } catch (e) {
+      clearInterval(spinner);
+      process.stdout.write(`\r  ${yellow("!")} Model download failed: ${e.message}              \n`);
+      console.log(dim(`    Retry: context-vault setup`));
+      console.log(dim(`    Semantic search disabled — full-text search still works.`));
+    }
   }
 
   // Clean up legacy project-root config.json if it exists
@@ -511,9 +527,9 @@ async function runSetup() {
     `  "Show my vault status"`,
     ``,
     `  ${bold("CLI Commands:")}`,
-    `  context-mcp status    Show vault health`,
-    `  context-mcp ui        Launch web dashboard`,
-    `  context-mcp update    Check for updates`,
+    `  context-vault status    Show vault health`,
+    `  context-vault ui        Launch web dashboard`,
+    `  context-vault update    Check for updates`,
   ];
   const innerWidth = Math.max(...boxLines.map((l) => l.length)) + 2;
   const pad = (s) => s + " ".repeat(Math.max(0, innerWidth - s.length));
@@ -530,6 +546,7 @@ async function configureClaude(tool, vaultDir) {
   const env = { ...process.env };
   delete env.CLAUDECODE;
 
+  // Clean up old name
   try {
     execSync("claude mcp remove context-mcp -s user", { stdio: "pipe", env });
   } catch {}
@@ -538,24 +555,30 @@ async function configureClaude(tool, vaultDir) {
     execSync("claude mcp remove context-vault -s user", { stdio: "pipe", env });
   } catch {}
 
-  if (isInstalledPackage()) {
-    const cmdArgs = ["serve"];
-    if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
-    execSync(
-      `claude mcp add -s user context-mcp -- context-mcp ${cmdArgs.join(" ")}`,
-      { stdio: "pipe", env }
-    );
-  } else {
-    const cmdArgs = [`"${SERVER_PATH}"`];
-    if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
-    execSync(
-      `claude mcp add -s user context-mcp -- node ${cmdArgs.join(" ")}`,
-      { stdio: "pipe", env }
-    );
+  try {
+    if (isInstalledPackage()) {
+      const cmdArgs = ["serve"];
+      if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
+      execSync(
+        `claude mcp add -s user context-vault -- context-vault ${cmdArgs.join(" ")}`,
+        { stdio: "pipe", env }
+      );
+    } else {
+      const cmdArgs = [`"${SERVER_PATH}"`];
+      if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
+      execSync(
+        `claude mcp add -s user context-vault -- node ${cmdArgs.join(" ")}`,
+        { stdio: "pipe", env }
+      );
+    }
+  } catch (e) {
+    const stderr = e.stderr?.toString().trim();
+    throw new Error(stderr || e.message);
   }
 }
 
 async function configureCodex(tool, vaultDir) {
+  // Clean up old name
   try {
     execSync("codex mcp remove context-mcp", { stdio: "pipe" });
   } catch {}
@@ -564,20 +587,25 @@ async function configureCodex(tool, vaultDir) {
     execSync("codex mcp remove context-vault", { stdio: "pipe" });
   } catch {}
 
-  if (isInstalledPackage()) {
-    const cmdArgs = ["serve"];
-    if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
-    execSync(
-      `codex mcp add context-mcp -- context-mcp ${cmdArgs.join(" ")}`,
-      { stdio: "pipe" }
-    );
-  } else {
-    const cmdArgs = [`"${SERVER_PATH}"`];
-    if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
-    execSync(
-      `codex mcp add context-mcp -- node ${cmdArgs.join(" ")}`,
-      { stdio: "pipe" }
-    );
+  try {
+    if (isInstalledPackage()) {
+      const cmdArgs = ["serve"];
+      if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
+      execSync(
+        `codex mcp add context-vault -- context-vault ${cmdArgs.join(" ")}`,
+        { stdio: "pipe" }
+      );
+    } else {
+      const cmdArgs = [`"${SERVER_PATH}"`];
+      if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
+      execSync(
+        `codex mcp add context-vault -- node ${cmdArgs.join(" ")}`,
+        { stdio: "pipe" }
+      );
+    }
+  } catch (e) {
+    const stderr = e.stderr?.toString().trim();
+    throw new Error(stderr || e.message);
   }
 }
 
@@ -606,19 +634,20 @@ function configureJsonTool(tool, vaultDir) {
     config[tool.configKey] = {};
   }
 
-  delete config[tool.configKey]["context-vault"];
+  // Clean up old "context-mcp" key
+  delete config[tool.configKey]["context-mcp"];
 
   if (isInstalledPackage()) {
     const serverArgs = ["serve"];
     if (vaultDir) serverArgs.push("--vault-dir", vaultDir);
-    config[tool.configKey]["context-mcp"] = {
-      command: "context-mcp",
+    config[tool.configKey]["context-vault"] = {
+      command: "context-vault",
       args: serverArgs,
     };
   } else {
     const serverArgs = [SERVER_PATH];
     if (vaultDir) serverArgs.push("--vault-dir", vaultDir);
-    config[tool.configKey]["context-mcp"] = {
+    config[tool.configKey]["context-vault"] = {
       command: "node",
       args: serverArgs,
     };
@@ -642,7 +671,7 @@ function createSeedEntries(vaultDir) {
     writeFileSync(insightPath, `---
 id: ${id1}
 tags: ["getting-started", "vault"]
-source: context-mcp-setup
+source: context-vault-setup
 created: ${now}
 ---
 Welcome to your context vault! This is a seed entry created during setup.
@@ -672,7 +701,7 @@ ${insightPath}
     writeFileSync(decisionPath, `---
 id: ${id2}
 tags: ["example", "architecture"]
-source: context-mcp-setup
+source: context-vault-setup
 created: ${now}
 ---
 Example decision: Use local-first data storage (SQLite + files) over cloud databases.
@@ -701,10 +730,10 @@ async function runConnect() {
   const hostedUrl = getFlag("--url") || "https://www.context-vault.com";
 
   if (!apiKey) {
-    console.log(`\n  ${bold("context-mcp connect")}\n`);
+    console.log(`\n  ${bold("context-vault connect")}\n`);
     console.log(`  Connect your AI tools to a hosted Context Vault.\n`);
     console.log(`  Usage:`);
-    console.log(`    context-mcp connect --key cv_...\n`);
+    console.log(`    context-vault connect --key cv_...\n`);
     console.log(`  Options:`);
     console.log(`    --key <key>   API key (required)`);
     console.log(`    --url <url>   Hosted server URL (default: https://www.context-vault.com)`);
@@ -798,20 +827,30 @@ function configureClaudeHosted(apiKey, hostedUrl) {
   try { execSync("claude mcp remove context-mcp -s user", { stdio: "pipe", env }); } catch {}
   try { execSync("claude mcp remove context-vault -s user", { stdio: "pipe", env }); } catch {}
 
-  execSync(
-    `claude mcp add -s user --transport http context-mcp ${hostedUrl}/mcp`,
-    { stdio: "pipe", env }
-  );
+  try {
+    execSync(
+      `claude mcp add -s user --transport http context-vault ${hostedUrl}/mcp`,
+      { stdio: "pipe", env }
+    );
+  } catch (e) {
+    const stderr = e.stderr?.toString().trim();
+    throw new Error(stderr || e.message);
+  }
 }
 
 function configureCodexHosted(apiKey, hostedUrl) {
   try { execSync("codex mcp remove context-mcp", { stdio: "pipe" }); } catch {}
   try { execSync("codex mcp remove context-vault", { stdio: "pipe" }); } catch {}
 
-  execSync(
-    `codex mcp add --transport http context-mcp ${hostedUrl}/mcp`,
-    { stdio: "pipe" }
-  );
+  try {
+    execSync(
+      `codex mcp add --transport http context-vault ${hostedUrl}/mcp`,
+      { stdio: "pipe" }
+    );
+  } catch (e) {
+    const stderr = e.stderr?.toString().trim();
+    throw new Error(stderr || e.message);
+  }
 }
 
 function configureJsonToolHosted(tool, apiKey, hostedUrl) {
@@ -838,9 +877,10 @@ function configureJsonToolHosted(tool, apiKey, hostedUrl) {
     config[tool.configKey] = {};
   }
 
-  delete config[tool.configKey]["context-vault"];
+  // Clean up old "context-mcp" key
+  delete config[tool.configKey]["context-mcp"];
 
-  config[tool.configKey]["context-mcp"] = {
+  config[tool.configKey]["context-vault"] = {
     url: `${hostedUrl}/mcp`,
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -857,17 +897,37 @@ function runUi() {
   if (!existsSync(appDist) || !existsSync(join(appDist, "index.html"))) {
     console.error(red("Web dashboard not found."));
     console.error(dim("  From repo: npm run build --workspace=packages/app"));
-    console.error(dim("  Then run: context-mcp ui"));
+    console.error(dim("  Then run: context-vault ui"));
     process.exit(1);
   }
 
-  const port = getFlag("--port") || "3141";
+  const port = parseInt(getFlag("--port") || "3141", 10);
   const localServer = join(ROOT, "scripts", "local-server.js");
   if (!existsSync(localServer)) {
     console.error(red("Local server not found."));
     process.exit(1);
   }
 
+  // Probe the port before forking
+  const probe = createNetServer();
+  probe.once("error", (e) => {
+    if (e.code === "EADDRINUSE") {
+      console.error(red(`  Port ${port} is already in use.`));
+      console.error(`  Try: ${cyan(`context-vault ui --port ${port + 1}`)}`);
+      process.exit(1);
+    }
+    // Other error — let the fork handle it
+    probe.close();
+    launchServer(port, localServer);
+  });
+  probe.listen(port, () => {
+    probe.close(() => {
+      launchServer(port, localServer);
+    });
+  });
+}
+
+function launchServer(port, localServer) {
   const child = fork(localServer, [`--port=${port}`], { stdio: "inherit" });
   child.on("exit", (code) => process.exit(code ?? 0));
 
@@ -896,7 +956,7 @@ async function runReindex() {
     console.error(
       red(`Vault directory not found: ${config.vaultDir}`)
     );
-    console.error("Run " + cyan("context-mcp setup") + " to configure.");
+    console.error("Run " + cyan("context-vault setup") + " to configure.");
     process.exit(1);
   }
 
@@ -984,7 +1044,7 @@ async function runStatus() {
   if (status.stalePaths) {
     console.log();
     console.log(yellow("  Stale paths detected in DB."));
-    console.log(`  Run ${cyan("context-mcp reindex")} to update.`);
+    console.log(`  Run ${cyan("context-vault reindex")} to update.`);
   }
   console.log();
 }
@@ -1040,31 +1100,36 @@ async function runUninstall() {
   console.log(`  ${bold("◇ context-vault")} ${dim("uninstall")}`);
   console.log();
 
-  // Remove from Claude Code
+  // Remove from Claude Code (both old and new names)
   try {
     const env = { ...process.env };
     delete env.CLAUDECODE;
-    execSync("claude mcp remove context-mcp -s user", { stdio: "pipe", env });
+    try { execSync("claude mcp remove context-mcp -s user", { stdio: "pipe", env }); } catch {}
+    execSync("claude mcp remove context-vault -s user", { stdio: "pipe", env });
     console.log(`  ${green("+")} Removed from Claude Code`);
   } catch {
     console.log(`  ${dim("-")} Claude Code — not configured or not installed`);
   }
 
-  // Remove from Codex
+  // Remove from Codex (both old and new names)
   try {
-    execSync("codex mcp remove context-mcp", { stdio: "pipe" });
+    try { execSync("codex mcp remove context-mcp", { stdio: "pipe" }); } catch {}
+    execSync("codex mcp remove context-vault", { stdio: "pipe" });
     console.log(`  ${green("+")} Removed from Codex`);
   } catch {
     console.log(`  ${dim("-")} Codex — not configured or not installed`);
   }
 
-  // Remove from JSON-configured tools
+  // Remove from JSON-configured tools (both old and new keys)
   for (const tool of TOOLS.filter((t) => t.configType === "json")) {
     if (!existsSync(tool.configPath)) continue;
     try {
       const config = JSON.parse(readFileSync(tool.configPath, "utf-8"));
-      if (config[tool.configKey]?.["context-mcp"]) {
+      const hadOld = !!config[tool.configKey]?.["context-mcp"];
+      const hadNew = !!config[tool.configKey]?.["context-vault"];
+      if (hadOld || hadNew) {
         delete config[tool.configKey]["context-mcp"];
+        delete config[tool.configKey]["context-vault"];
         writeFileSync(tool.configPath, JSON.stringify(config, null, 2) + "\n");
         console.log(`  ${green("+")} Removed from ${tool.name}`);
       }
@@ -1103,10 +1168,10 @@ async function runMigrate() {
     : null;
 
   if (!direction) {
-    console.log(`\n  ${bold("context-mcp migrate")}\n`);
+    console.log(`\n  ${bold("context-vault migrate")}\n`);
     console.log(`  Usage:`);
-    console.log(`    context-mcp migrate --to-hosted  Upload local vault to hosted service`);
-    console.log(`    context-mcp migrate --to-local   Download hosted vault to local files`);
+    console.log(`    context-vault migrate --to-hosted  Upload local vault to hosted service`);
+    console.log(`    context-vault migrate --to-local   Download hosted vault to local files`);
     console.log(`\n  Options:`);
     console.log(`    --url <url>      Hosted server URL (default: https://vault.contextvault.dev)`);
     console.log(`    --key <key>      API key (cv_...)`);
@@ -1164,7 +1229,7 @@ async function runMigrate() {
     if (results.failed > 0) {
       console.log(`  ${red("-")} ${results.failed} failed`);
     }
-    console.log(dim("\n  Run `context-mcp reindex` to rebuild the search index."));
+    console.log(dim("\n  Run `context-vault reindex` to rebuild the search index."));
   }
   console.log();
 }
@@ -1203,7 +1268,7 @@ async function main() {
       break;
     case "import":
     case "export":
-      console.log(`Import/export removed. Add .md files to vault/ and run \`context-mcp reindex\`.`);
+      console.log(`Import/export removed. Add .md files to vault/ and run \`context-vault reindex\`.`);
       break;
     case "reindex":
       await runReindex();
@@ -1222,7 +1287,7 @@ async function main() {
       break;
     default:
       console.error(red(`Unknown command: ${command}`));
-      console.error(`Run ${cyan("context-mcp --help")} for usage.`);
+      console.error(`Run ${cyan("context-vault --help")} for usage.`);
       process.exit(1);
   }
 }

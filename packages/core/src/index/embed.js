@@ -30,14 +30,14 @@ async function ensurePipeline() {
     mkdirSync(modelCacheDir, { recursive: true });
     env.cacheDir = modelCacheDir;
 
-    console.error("[context-mcp] Loading embedding model (first run may download ~22MB)...");
+    console.error("[context-vault] Loading embedding model (first run may download ~22MB)...");
     extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
     embedAvailable = true;
     return extractor;
   } catch (e) {
     embedAvailable = false;
-    console.error(`[context-mcp] Failed to load embedding model: ${e.message}`);
-    console.error(`[context-mcp] Semantic search disabled. Full-text search still works.`);
+    console.error(`[context-vault] Failed to load embedding model: ${e.message}`);
+    console.error(`[context-vault] Semantic search disabled. Full-text search still works.`);
     return null;
   }
 }

@@ -154,7 +154,7 @@ async function main() {
         state.config = newConfig;
         state.db = await initDatabase(newConfig.dbPath);
         state.stmts = prepareStatements(state.db);
-        console.log(`[context-mcp] Switched to vault: ${vaultPath}`);
+        console.log(`[context-vault] Switched to vault: ${vaultPath}`);
         return json({
           userId: "local",
           email: "local@localhost",
@@ -365,9 +365,9 @@ async function main() {
   });
 
   server.listen(port, () => {
-    console.log(`[context-mcp] Local mode: http://localhost:${port}`);
-    console.log(`[context-mcp] Vault: ${config.vaultDir}`);
-    console.log(`[context-mcp] No authentication required`);
+    console.log(`[context-vault] Local mode: http://localhost:${port}`);
+    console.log(`[context-vault] Vault: ${config.vaultDir}`);
+    console.log(`[context-vault] No authentication required`);
   });
 
   process.on("SIGINT", () => {
