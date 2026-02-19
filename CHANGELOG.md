@@ -28,6 +28,9 @@ All notable changes to context-vault are documented here.
 - **CORS preflight** support on local server (OPTIONS handler + full CORS headers)
 - 42 new unit tests for importers and URL ingestion (107 total)
 
+### Fixed
+- **`context-vault ui` now works after npm install** — pre-built web dashboard is bundled in the npm package via prepack; dual-path resolution falls back to workspace path for local dev
+
 ### New core exports
 - `@context-vault/core/capture/importers` — Format detection + multi-format parsers
 - `@context-vault/core/capture/import-pipeline` — Batch import orchestrator
