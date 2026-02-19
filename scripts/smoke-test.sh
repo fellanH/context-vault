@@ -19,10 +19,10 @@ check() {
   status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$@" "$url")
   if [ "$status" = "$expected_status" ]; then
     echo "  PASS: $desc (HTTP $status)"
-    ((PASS++))
+    ((PASS++)) || true
   else
     echo "  FAIL: $desc — expected $expected_status, got $status"
-    ((FAIL++))
+    ((FAIL++)) || true
   fi
 }
 
@@ -41,10 +41,10 @@ check "GET / returns 200" "200" "$BASE/"
 ROOT_BODY=$(curl -s --max-time 5 "$BASE/")
 if echo "$ROOT_BODY" | grep -q '<div id="root"'; then
   echo "  PASS: / includes root container"
-  ((PASS++))
+  ((PASS++)) || true
 else
   echo "  FAIL: / missing root container"
-  ((FAIL++))
+  ((FAIL++)) || true
 fi
 
 # Optional app-domain checks
@@ -61,19 +61,19 @@ check "GET /health returns 200" "200" "$BASE/health"
 HEALTH=$(curl -s --max-time 5 "$BASE/health")
 if echo "$HEALTH" | grep -q '"status"'; then
   echo "  PASS: /health has status field"
-  ((PASS++))
+  ((PASS++)) || true
 else
   echo "  FAIL: /health missing status field"
-  ((FAIL++))
+  ((FAIL++)) || true
 fi
 
 # Version field in health response
 if echo "$HEALTH" | grep -q '"version"'; then
   echo "  PASS: /health has version field"
-  ((PASS++))
+  ((PASS++)) || true
 else
   echo "  FAIL: /health missing version field"
-  ((FAIL++))
+  ((FAIL++)) || true
 fi
 
 # Unauthenticated MCP returns 401
@@ -103,20 +103,20 @@ check "GET /api/unknown returns 404" "404" "$BASE/api/unknown"
 HEADERS=$(curl -s -I --max-time 5 "$BASE/health")
 if echo "$HEADERS" | grep -qi "x-content-type-options: nosniff"; then
   echo "  PASS: X-Content-Type-Options: nosniff present"
-  ((PASS++))
+  ((PASS++)) || true
 else
   echo "  FAIL: X-Content-Type-Options: nosniff missing"
-  ((FAIL++))
+  ((FAIL++)) || true
 fi
 
 # CORS check: evil origin should not get Access-Control-Allow-Origin: *
 CORS_HEADERS=$(curl -s -I --max-time 5 -H "Origin: https://evil.com" "$BASE/health")
 if echo "$CORS_HEADERS" | grep -qi "access-control-allow-origin: \*"; then
   echo "  FAIL: CORS allows wildcard origin in production"
-  ((FAIL++))
+  ((FAIL++)) || true
 else
   echo "  PASS: CORS does not allow wildcard origin"
-  ((PASS++))
+  ((PASS++)) || true
 fi
 
 echo ""

@@ -10,3 +10,4 @@ test
 vitest.config.js
 packages/local
 fly.toml
+fly.staging.toml
