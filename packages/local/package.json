@@ -31,6 +31,9 @@
   "keywords": ["mcp", "model-context-protocol", "ai", "knowledge-base", "knowledge-management", "vault", "rag", "sqlite", "embeddings", "claude", "cursor", "cline", "windsurf"],
   "bundledDependencies": ["@context-vault/core"],
   "dependencies": {
-    "@context-vault/core": "^2.4.1"
+    "@context-vault/core": "^2.4.1",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "better-sqlite3": "^12.6.2",
+    "sqlite-vec": "^0.1.0"
   }
 }

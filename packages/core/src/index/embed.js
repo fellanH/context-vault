@@ -5,16 +5,9 @@
  * disk issues), semantic search is disabled but FTS still works.
  */
 
-import { pipeline, env } from "@huggingface/transformers";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
-
-// Redirect model cache to ~/.context-mcp/models/ so it works when the
-// package is installed globally in a root-owned directory (e.g. /usr/lib/node_modules/).
-const modelCacheDir = join(homedir(), ".context-mcp", "models");
-mkdirSync(modelCacheDir, { recursive: true });
-env.cacheDir = modelCacheDir;
 
 let extractor = null;
 
@@ -26,6 +19,17 @@ async function ensurePipeline() {
   if (extractor) return extractor;
 
   try {
+    // Dynamic import — @huggingface/transformers is optional (its transitive
+    // dep `sharp` can fail to install on some platforms).  When missing, the
+    // server still works with full-text search only.
+    const { pipeline, env } = await import("@huggingface/transformers");
+
+    // Redirect model cache to ~/.context-mcp/models/ so it works when the
+    // package is installed globally in a root-owned directory (e.g. /usr/lib/node_modules/).
+    const modelCacheDir = join(homedir(), ".context-mcp", "models");
+    mkdirSync(modelCacheDir, { recursive: true });
+    env.cacheDir = modelCacheDir;
+
     console.error("[context-mcp] Loading embedding model (first run may download ~22MB)...");
     extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
     embedAvailable = true;
