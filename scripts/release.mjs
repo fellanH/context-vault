@@ -22,6 +22,7 @@ const PACKAGE_FILES = [
   'package.json',
   'packages/core/package.json',
   'packages/local/package.json',
+  'packages/extension/package.json',
 ];
 
 // --- Helpers ---
@@ -90,6 +91,14 @@ for (const file of PACKAGE_FILES) {
   console.log(`  bumped ${file}`);
 }
 
+// --- Bump extension manifest.json ---
+
+const manifestPath = resolve(root, 'packages/extension/manifest.json');
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+manifest.version = newVersion;
+writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+console.log(`  bumped packages/extension/manifest.json`);
+
 // --- Verify CHANGELOG ---
 
 const changelog = readFileSync(resolve(root, 'CHANGELOG.md'), 'utf8');
@@ -97,14 +106,14 @@ if (!changelog.includes(`## [${newVersion}]`)) {
   console.error(`\n  CHANGELOG.md has no entry for [${newVersion}].`);
   console.error(`  Add a "## [${newVersion}]" section before releasing.\n`);
   // Revert bumped files
-  run('git checkout -- ' + PACKAGE_FILES.join(' '));
+  run('git checkout -- ' + PACKAGE_FILES.join(' ') + ' packages/extension/manifest.json');
   console.error('  Reverted version bumps.');
   process.exit(1);
 }
 
 // --- Commit, tag, push ---
 
-run(`git add ${PACKAGE_FILES.join(' ')}`);
+run(`git add ${PACKAGE_FILES.join(' ')} packages/extension/manifest.json`);
 run(`git commit -m "v${newVersion}"`);
 run(`git tag v${newVersion}`);
 
@@ -113,4 +122,4 @@ console.log(`  pushing to origin...\n`);
 
 run('git push origin main --tags');
 
-console.log(`  done — CI will publish to npm and create the GitHub release.\n`);
+console.log(`  done — CI will publish to npm, Chrome Web Store, and create the GitHub release.\n`);

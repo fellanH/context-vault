@@ -72,7 +72,7 @@ export function MarketingLayout() {
               </a>
             </Button>
             <Button asChild variant="link" size="sm" className="px-0">
-              <a href={appHref("/privacy")}>Privacy</a>
+              <Link to="/privacy">Privacy</Link>
             </Button>
           </div>
         </div>

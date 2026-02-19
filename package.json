@@ -24,6 +24,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "release": "node scripts/release.mjs",
+    "publish:extension": "node scripts/publish-extension.mjs",
     "deploy": "fly deploy",
     "deploy:secrets": "echo 'Run: fly secrets set AUTH_REQUIRED=true VAULT_MASTER_SECRET=<secret> STRIPE_SECRET_KEY=<key> STRIPE_WEBHOOK_SECRET=<secret> STRIPE_PRICE_PRO=<price>'",
     "docker:build": "docker build -f packages/hosted/Dockerfile -t context-vault .",

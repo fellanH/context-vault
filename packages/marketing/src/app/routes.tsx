@@ -4,6 +4,7 @@ import { LandingPage } from "./pages/LandingPage";
 import { GetStartedPage } from "./pages/GetStartedPage";
 import { BlogIndexPage } from "./pages/BlogIndexPage";
 import { BlogPostPage } from "./pages/BlogPostPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
 
 export const router = createBrowserRouter([
   {
@@ -14,6 +15,7 @@ export const router = createBrowserRouter([
       { path: "get-started", Component: GetStartedPage },
       { path: "blog", Component: BlogIndexPage },
       { path: "blog/:slug", Component: BlogPostPage },
+      { path: "privacy", Component: PrivacyPage },
     ],
   },
 ]);

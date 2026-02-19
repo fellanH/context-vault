@@ -373,6 +373,32 @@ Push tag v*
 
 **Required secret**: `NPM_TOKEN` — granular access token from npmjs.com scoped to `context-vault` with read+write permission.
 
+### `publish-extension.yml` — Chrome Web Store Publish (tag push)
+
+```
+Push tag v*  (or manual workflow_dispatch)
+    │
+    ▼
+  checkout + npm ci
+    │
+    ▼
+  verify tag matches manifest.json version
+    │
+    ▼
+  npm run extension:build
+    │
+    ▼
+  zip dist/ → extension.zip
+    │
+    ▼
+  node scripts/publish-extension.mjs extension.zip
+    (OAuth2 token exchange → upload → publish)
+```
+
+**Required secrets**: `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`, `CWS_EXTENSION_ID`
+
+See `packages/extension/store/SETUP.md` for first-time credential setup.
+
 ### Releasing to npm
 
 ```bash
@@ -381,7 +407,7 @@ Push tag v*
 npm run release -- patch    # or minor / major / 2.5.0
 ```
 
-`npm run release` handles everything: bumps version in all 3 package.json files (root, core, local + core dependency), verifies CHANGELOG has an entry, commits, tags, and pushes. The tag push triggers `publish.yml` which runs tests, publishes to npm with provenance, and creates a GitHub Release.
+`npm run release` handles everything: bumps version in all 4 package.json files (root, core, local + core dependency, extension) and the extension `manifest.json`, verifies CHANGELOG has an entry, commits, tags, and pushes. The tag push triggers `publish.yml` (npm) and `publish-extension.yml` (Chrome Web Store).
 
 **Preflight checks** (the script aborts if any fail):
 - Working tree must be clean
@@ -411,7 +437,8 @@ npm run marketing:build           # Marketing production build
 npm run extension:dev             # Extension watch build
 npm run extension:build           # Extension production build
 npm run hosted:dev                # Hosted server with --watch
-npm run release -- patch          # Bump, commit, tag, push → CI publishes to npm
+npm run release -- patch          # Bump, commit, tag, push → CI publishes to npm + CWS
+npm run publish:extension         # Manual CWS publish (needs env vars)
 npm run deploy                    # Fly.io production deploy
 npm run docker:build              # Build Docker image
 npm run docker:run                # Run Docker container locally
