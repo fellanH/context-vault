@@ -87,5 +87,38 @@ export const api = {
   },
 };
 
+/**
+ * Upload local vault entries to a hosted vault.
+ * Reads entries from the local server, posts them to the hosted import endpoint.
+ */
+export async function uploadLocalVault(hostedToken: string): Promise<{ imported: number; failed: number }> {
+  // Fetch all entries from local server
+  const localEntries = await request<{ entries: Array<Record<string, unknown>>; total: number }>(
+    "/vault/entries?limit=100"
+  );
+
+  if (!localEntries.entries.length) {
+    return { imported: 0, failed: 0 };
+  }
+
+  // Post to hosted bulk import
+  const hostedUrl = import.meta.env.VITE_HOSTED_URL || "https://www.context-vault.com";
+  const res = await fetch(`${hostedUrl}/api/vault/import/bulk`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${hostedToken}`,
+    },
+    body: JSON.stringify({ entries: localEntries.entries }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: "Upload failed" }));
+    throw new ApiError(res.status, body.error || "Upload failed");
+  }
+
+  return res.json();
+}
+
 // Keep legacy export for any existing usage
 export const apiFetch = request;

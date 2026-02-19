@@ -20,29 +20,61 @@ export function getOnboardingSteps({
   if (isLocalMode) {
     return [
       {
-        id: "connect-local",
+        id: "connect-folder",
         label: "Connect local vault",
         completed: isAuthenticated,
         description: "Local mode is active for this dashboard session",
+        actionLabel: "Connected",
+      },
+      {
+        id: "connect-tools",
+        label: "Connect AI tools",
+        completed: hasMcpActivity,
+        description: "Configure your AI tools to use Context Vault",
+        action: "copy-connect-command",
+        actionLabel: "Copy command",
       },
       {
         id: "first-entry",
         label: "Save your first entry",
         completed: entriesUsed > 0,
+        action: "/vault/knowledge",
+        actionLabel: "Add entry",
+      },
+      {
+        id: "go-hosted",
+        label: "Create a cloud account",
+        completed: false,
+        description: "Sync & backup your vault across devices",
+        action: "/register",
+        actionLabel: "Sign up",
       },
     ];
   }
 
   return [
-    { id: "create-account", label: "Create account", completed: isAuthenticated },
-    { id: "copy-api-key", label: "Copy your API key", completed: hasApiKey },
     {
-      id: "connect-claude",
-      label: "Connect to Claude Code",
-      completed: hasMcpActivity,
-      description: "Detected from API key usage",
+      id: "sign-in",
+      label: "Sign in",
+      completed: isAuthenticated,
+      actionLabel: "Sign in",
+      action: "/login",
     },
-    { id: "first-entry", label: "Save your first entry", completed: entriesUsed > 0 },
+    {
+      id: "connect-tools",
+      label: "Connect AI tools",
+      completed: hasMcpActivity,
+      description: "Auto-configure all your AI tools with one command",
+      action: "copy-connect-command",
+      actionLabel: "Copy command",
+    },
+    {
+      id: "first-entry",
+      label: "Save your first entry",
+      completed: entriesUsed > 0,
+      action: "/vault/knowledge",
+      actionLabel: "Add entry",
+    },
   ];
 }
 
@@ -52,4 +84,8 @@ export function isOnboardingDismissed(): boolean {
 
 export function dismissOnboarding() {
   localStorage.setItem(DISMISSED_KEY, "true");
+}
+
+export function resetOnboarding() {
+  localStorage.removeItem(DISMISSED_KEY);
 }

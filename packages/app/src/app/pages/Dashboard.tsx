@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { Checkbox } from "../components/ui/checkbox";
 import { UsageMeter } from "../components/UsageMeter";
 import { useEntries, useUsage, useApiKeys } from "../lib/hooks";
 import { useAuth } from "../lib/auth";
@@ -11,8 +10,10 @@ import {
   getOnboardingSteps,
   isOnboardingDismissed,
   dismissOnboarding,
+  resetOnboarding,
 } from "../lib/onboarding";
 import { formatMegabytes } from "../lib/format";
+import { uploadLocalVault } from "../lib/api";
 import {
   FileText,
   HardDrive,
@@ -25,8 +26,16 @@ import {
   Copy,
   Check,
   ExternalLink,
+  Cloud,
+  Loader2,
+  CircleCheck,
+  Link2,
+  UserPlus,
+  FolderOpen,
 } from "lucide-react";
 import { toast } from "sonner";
+
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 function formatRelativeTime(date: Date): string {
   const now = new Date();
@@ -40,8 +49,17 @@ function formatRelativeTime(date: Date): string {
   return `${diffDays}d ago`;
 }
 
+const STEP_ICONS: Record<string, React.ElementType> = {
+  "sign-in": UserPlus,
+  "connect-folder": FolderOpen,
+  "connect-tools": Link2,
+  "first-entry": Plus,
+  "go-hosted": Cloud,
+};
+
 export function Dashboard() {
   const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const { data: entriesData, isLoading: entriesLoading } = useEntries({ limit: 10 });
   const { data: usage, isLoading: usageLoading } = useUsage();
   const { data: apiKeys } = useApiKeys();
@@ -57,32 +75,40 @@ export function Dashboard() {
     hasApiKey,
     hasMcpActivity,
   });
-  const [showChecklist, setShowChecklist] = useState(() => !isOnboardingDismissed());
-  const [copiedConfig, setCopiedConfig] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingDismissed());
+  const [copiedCmd, setCopiedCmd] = useState(false);
+  const [uploadDismissed, setUploadDismissed] = useState(
+    () => localStorage.getItem("context-vault-upload-dismissed") === "true"
+  );
+  const [uploading, setUploading] = useState(false);
 
-  const allComplete = steps.every((s) => s.completed);
+  const allComplete = steps.filter((s) => s.id !== "go-hosted").every((s) => s.completed);
+  const completedCount = steps.filter((s) => s.completed).length;
+  const totalRequired = steps.filter((s) => s.id !== "go-hosted").length;
 
   const handleDismiss = () => {
     dismissOnboarding();
-    setShowChecklist(false);
+    setShowOnboarding(false);
   };
 
-  const copyMcpConfig = async () => {
-    const config = JSON.stringify({
-      mcpServers: {
-        "context-vault": {
-          url: "https://www.context-vault.com/mcp",
-          headers: { Authorization: "Bearer YOUR_API_KEY" },
-        },
-      },
-    }, null, 2);
-    await navigator.clipboard.writeText(config);
-    setCopiedConfig(true);
-    toast.success("MCP config copied");
-    setTimeout(() => setCopiedConfig(false), 2000);
+  const connectCommand = "npx context-vault connect --key YOUR_API_KEY";
+
+  const copyConnectCommand = async () => {
+    await navigator.clipboard.writeText(connectCommand);
+    setCopiedCmd(true);
+    toast.success("Connect command copied");
+    setTimeout(() => setCopiedCmd(false), 2000);
   };
 
-  const isUnlimited = (limit: number) => !isFinite(limit);
+  const handleStepAction = (step: (typeof steps)[0]) => {
+    if (step.action === "copy-connect-command") {
+      copyConnectCommand();
+    } else if (step.action?.startsWith("/")) {
+      navigate(step.action);
+    }
+  };
+
+  const isUnlimited = (limit: number) => !Number.isFinite(limit);
 
   const usageCards = usage
     ? [
@@ -128,16 +154,23 @@ export function Dashboard() {
       <div>
         <h1 className="text-2xl font-semibold mb-1">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
-          Welcome back. Here's your vault at a glance.
+          {allComplete
+            ? "Welcome back. Here's your vault at a glance."
+            : "Get started by completing the steps below."}
         </p>
       </div>
 
-      {/* Onboarding Checklist */}
-      {showChecklist && !allComplete && (
+      {/* Onboarding Journey — Hero section */}
+      {showOnboarding && !allComplete && (
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Getting Started</CardTitle>
+              <div>
+                <CardTitle className="text-base">Getting Started</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {completedCount} of {totalRequired} steps complete
+                </p>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
@@ -147,67 +180,152 @@ export function Dashboard() {
                 <X className="size-3.5" />
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Complete these steps to get the most out of Context Vault.
-            </p>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {steps.map((step) => (
-              <div key={step.id} className="flex items-start gap-3">
-                <Checkbox
-                  checked={step.completed}
-                  disabled
-                  className="mt-0.5"
-                />
-                <div className="flex-1">
-                  <span className={step.completed ? "text-sm line-through text-muted-foreground" : "text-sm"}>
-                    {step.label}
-                  </span>
-                  {step.id === "connect-claude" && !step.completed && (
-                    <div className="mt-2 space-y-2">
-                      <pre className="bg-muted p-3 rounded text-xs font-mono overflow-x-auto">
-{`{
-  "mcpServers": {
-    "context-vault": {
-      "url": "https://www.context-vault.com/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_API_KEY"
-      }
-    }
-  }
-}`}
-                      </pre>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {steps.map((step) => {
+                const Icon = STEP_ICONS[step.id] || FileText;
+                const isOptional = step.id === "go-hosted";
+
+                return (
+                  <div
+                    key={step.id}
+                    className={`relative rounded-lg border p-4 space-y-3 transition-colors ${
+                      step.completed
+                        ? "border-primary/20 bg-primary/5"
+                        : "border-border hover:border-primary/30"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className={`rounded-full p-2 ${
+                        step.completed ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                      }`}>
+                        {step.completed ? (
+                          <CircleCheck className="size-4" />
+                        ) : (
+                          <Icon className="size-4" />
+                        )}
+                      </div>
+                      {isOptional && (
+                        <Badge variant="outline" className="text-[10px]">Optional</Badge>
+                      )}
+                    </div>
+                    <div>
+                      <p className={`text-sm font-medium ${step.completed ? "text-muted-foreground line-through" : ""}`}>
+                        {step.label}
+                      </p>
+                      {step.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{step.description}</p>
+                      )}
+                    </div>
+                    {!step.completed && step.action && (
                       <Button
-                        variant="outline"
+                        variant="secondary"
                         size="sm"
-                        className="gap-1.5 text-xs"
-                        onClick={copyMcpConfig}
+                        className="w-full gap-1.5 text-xs"
+                        onClick={() => handleStepAction(step)}
                       >
-                        {copiedConfig ? <Check className="size-3" /> : <Copy className="size-3" />}
-                        Copy config
+                        {step.action === "copy-connect-command" && (
+                          copiedCmd ? <Check className="size-3" /> : <Copy className="size-3" />
+                        )}
+                        {step.actionLabel || "Go"}
                       </Button>
-                      <a
-                        href="https://github.com/fellanH/context-mcp/blob/main/docs/distribution/connect-in-2-minutes.md"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                      >
-                        Full setup guide
-                        <ExternalLink className="size-3" />
-                      </a>
-                    </div>
-                  )}
-                  {step.id === "copy-api-key" && !step.completed && (
-                    <div className="mt-1">
-                      <Link to="/settings/api-keys" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
-                        Go to API Keys
-                        <ExternalLink className="size-3" />
-                      </Link>
-                    </div>
-                  )}
-                </div>
+                    )}
+                    {!step.completed && step.id === "connect-tools" && (
+                      <pre className="bg-muted p-2 rounded text-[10px] font-mono overflow-x-auto">
+                        {connectCommand}
+                      </pre>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Setup complete badge */}
+      {allComplete && !showOnboarding && (
+        <div className="flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
+          <div className="flex items-center gap-2">
+            <CircleCheck className="size-4 text-primary" />
+            <span className="text-sm text-primary font-medium">Setup complete</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs"
+            onClick={() => {
+              resetOnboarding();
+              setShowOnboarding(true);
+            }}
+          >
+            Show setup
+          </Button>
+        </div>
+      )}
+
+      {/* Upload prompt — local user who now has a hosted account */}
+      {isLocalMode && !uploadDismissed && entriesUsed > 0 && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="flex items-center justify-between py-4">
+            <div className="flex items-center gap-3">
+              <Cloud className="size-5 text-primary shrink-0" />
+              <div>
+                <p className="text-sm font-medium">Upload your local vault to the cloud?</p>
+                <p className="text-xs text-muted-foreground">
+                  Sync {entriesUsed} {entriesUsed === 1 ? "entry" : "entries"} to your hosted vault for backup and cross-device access.
+                </p>
               </div>
-            ))}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-4">
+              <Button
+                variant="default"
+                size="sm"
+                disabled={uploading}
+                onClick={async () => {
+                  const key = window.prompt("Enter your hosted API key (cv_...):");
+                  if (!key?.startsWith("cv_")) return;
+                  setUploading(true);
+                  try {
+                    const result = await uploadLocalVault(key);
+                    toast.success(`Uploaded ${result.imported} entries`);
+                    if (result.failed > 0) {
+                      toast.warning(`${result.failed} entries failed to upload`);
+                    }
+                    setUploadDismissed(true);
+                    localStorage.setItem("context-vault-upload-dismissed", "true");
+                  } catch {
+                    toast.error("Upload failed. Check your API key and try again.");
+                  } finally {
+                    setUploading(false);
+                  }
+                }}
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="size-3.5 mr-1.5" />
+                    Upload
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                onClick={() => {
+                  setUploadDismissed(true);
+                  localStorage.setItem("context-vault-upload-dismissed", "true");
+                }}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

@@ -52,6 +52,8 @@ export interface OnboardingStep {
   label: string;
   completed: boolean;
   description?: string;
+  action?: string;
+  actionLabel?: string;
 }
 
 // ─── API response types (match backend shapes exactly) ───────────────────────

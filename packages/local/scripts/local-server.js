@@ -10,7 +10,8 @@ import { createServer } from "node:http";
 import { createReadStream, existsSync, statSync, unlinkSync } from "node:fs";
 import { join, resolve, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
+import { execSync } from "node:child_process";
 import { resolveConfig } from "@context-vault/core/core/config";
 import { initDatabase, prepareStatements, insertVec, deleteVec } from "@context-vault/core/index/db";
 import { embed } from "@context-vault/core/index/embed";
@@ -109,6 +110,35 @@ async function main() {
       });
 
     const ctx = state.ctx;
+
+    // ─── API: POST /api/local/browse — native folder picker dialog ────────────
+    if (url === "/api/local/browse" && req.method === "POST") {
+      const os = platform();
+      try {
+        let selected;
+        if (os === "darwin") {
+          selected = execSync(
+            `osascript -e 'POSIX path of (choose folder with prompt "Select vault folder")'`,
+            { encoding: "utf-8", timeout: 30000 }
+          ).trim();
+        } else if (os === "linux") {
+          selected = execSync(
+            `zenity --file-selection --directory --title="Select vault folder" 2>/dev/null`,
+            { encoding: "utf-8", timeout: 30000 }
+          ).trim();
+        } else {
+          return json({ error: "Folder picker not supported on this platform" }, 501);
+        }
+
+        if (selected) {
+          return json({ path: selected });
+        }
+        return json({ path: null, cancelled: true });
+      } catch {
+        // User cancelled the dialog or command failed
+        return json({ path: null, cancelled: true });
+      }
+    }
 
     // ─── API: POST /api/local/connect — switch to a local vault folder ───────
     if (url === "/api/local/connect" && req.method === "POST") {

@@ -80,6 +80,10 @@ export function initMetaDb(dbPath) {
   if (!cols.includes("dek_salt")) {
     metaDb.exec(`ALTER TABLE users ADD COLUMN dek_salt BLOB`);
   }
+  if (!cols.includes("google_id")) {
+    metaDb.exec(`ALTER TABLE users ADD COLUMN google_id TEXT`);
+    metaDb.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL`);
+  }
 
   return metaDb;
 }
@@ -124,6 +128,9 @@ export function prepareMetaStatements(db) {
     updateUserTier: db.prepare(`UPDATE users SET tier = ?, updated_at = datetime('now') WHERE id = ?`),
     getUserByStripeCustomerId: db.prepare(`SELECT * FROM users WHERE stripe_customer_id = ?`),
     updateUserStripeId: db.prepare(`UPDATE users SET stripe_customer_id = ?, updated_at = datetime('now') WHERE id = ?`),
+
+    getUserByGoogleId: db.prepare(`SELECT * FROM users WHERE google_id = ?`),
+    createUserWithGoogle: db.prepare(`INSERT INTO users (id, email, name, tier, google_id) VALUES (?, ?, ?, ?, ?)`),
 
     // API Keys
     createApiKey: db.prepare(`INSERT INTO api_keys (id, user_id, key_hash, key_prefix, name) VALUES (?, ?, ?, ?, ?)`),

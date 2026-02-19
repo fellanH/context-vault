@@ -105,19 +105,27 @@ function vscodeDataDir() {
 
 // ─── Tool Detection ──────────────────────────────────────────────────────────
 
+function commandExists(bin) {
+  try {
+    const cmd = PLATFORM === "win32" ? `where ${bin}` : `which ${bin}`;
+    execSync(cmd, { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const TOOLS = [
   {
     id: "claude-code",
     name: "Claude Code",
-    detect: () => {
-      try {
-        const cmd = PLATFORM === "win32" ? "where claude" : "which claude";
-        execSync(cmd, { stdio: "pipe" });
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    detect: () => commandExists("claude"),
+    configType: "cli",
+  },
+  {
+    id: "codex",
+    name: "Codex",
+    detect: () => commandExists("codex"),
     configType: "cli",
   },
   {
@@ -142,6 +150,14 @@ const TOOLS = [
     detect: () => existsSync(join(HOME, ".codeium", "windsurf")),
     configType: "json",
     configPath: join(HOME, ".codeium", "windsurf", "mcp_config.json"),
+    configKey: "mcpServers",
+  },
+  {
+    id: "antigravity",
+    name: "Antigravity",
+    detect: () => existsSync(join(HOME, ".gemini", "antigravity")),
+    configType: "json",
+    configPath: join(HOME, ".gemini", "antigravity", "mcp_config.json"),
     configKey: "mcpServers",
   },
   {
@@ -172,6 +188,7 @@ ${bold("Usage:")}
 
 ${bold("Commands:")}
   ${cyan("setup")}                 Interactive MCP server installer
+  ${cyan("connect")} --key cv_...  Connect AI tools to hosted vault
   ${cyan("serve")}                 Start the MCP server (used by AI clients)
   ${cyan("ui")} [--port 3141]      Launch web dashboard
   ${cyan("reindex")}               Rebuild search index from knowledge files
@@ -272,7 +289,9 @@ async function runSetup() {
       console.log(`\n  ${dim("[2/2]")}${bold(" Configuring tools...\n")}`);
       for (const tool of selected) {
         try {
-          if (tool.configType === "cli") {
+          if (tool.configType === "cli" && tool.id === "codex") {
+            await configureCodex(tool, customVaultDir);
+          } else if (tool.configType === "cli") {
             await configureClaude(tool, customVaultDir);
           } else {
             configureJsonTool(tool, customVaultDir);
@@ -433,7 +452,9 @@ async function runSetup() {
 
   for (const tool of selected) {
     try {
-      if (tool.configType === "cli") {
+      if (tool.configType === "cli" && tool.id === "codex") {
+        await configureCodex(tool, customVaultDir);
+      } else if (tool.configType === "cli") {
         await configureClaude(tool, customVaultDir);
       } else {
         configureJsonTool(tool, customVaultDir);
@@ -530,6 +551,32 @@ async function configureClaude(tool, vaultDir) {
     execSync(
       `claude mcp add -s user context-mcp -- node ${cmdArgs.join(" ")}`,
       { stdio: "pipe", env }
+    );
+  }
+}
+
+async function configureCodex(tool, vaultDir) {
+  try {
+    execSync("codex mcp remove context-mcp", { stdio: "pipe" });
+  } catch {}
+
+  try {
+    execSync("codex mcp remove context-vault", { stdio: "pipe" });
+  } catch {}
+
+  if (isInstalledPackage()) {
+    const cmdArgs = ["serve"];
+    if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
+    execSync(
+      `codex mcp add context-mcp -- context-mcp ${cmdArgs.join(" ")}`,
+      { stdio: "pipe" }
+    );
+  } else {
+    const cmdArgs = [`"${SERVER_PATH}"`];
+    if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
+    execSync(
+      `codex mcp add context-mcp -- node ${cmdArgs.join(" ")}`,
+      { stdio: "pipe" }
     );
   }
 }
@@ -645,6 +692,162 @@ This is an example entry showing the decision format. Feel free to delete it.
   }
 
   return created;
+}
+
+// ─── Connect Command ─────────────────────────────────────────────────────────
+
+async function runConnect() {
+  const apiKey = getFlag("--key");
+  const hostedUrl = getFlag("--url") || "https://www.context-vault.com";
+
+  if (!apiKey) {
+    console.log(`\n  ${bold("context-mcp connect")}\n`);
+    console.log(`  Connect your AI tools to a hosted Context Vault.\n`);
+    console.log(`  Usage:`);
+    console.log(`    context-mcp connect --key cv_...\n`);
+    console.log(`  Options:`);
+    console.log(`    --key <key>   API key (required)`);
+    console.log(`    --url <url>   Hosted server URL (default: https://www.context-vault.com)`);
+    console.log();
+    return;
+  }
+
+  console.log();
+  console.log(`  ${bold("◇ context-vault")} ${dim("connect")}`);
+  console.log();
+
+  // Detect tools
+  console.log(dim(`  [1/2]`) + bold(" Detecting tools...\n"));
+  const detected = [];
+  for (const tool of TOOLS) {
+    const found = tool.detect();
+    if (found) {
+      detected.push(tool);
+      console.log(`  ${green("+")} ${tool.name}`);
+    } else {
+      console.log(`  ${dim("-")} ${dim(tool.name)} ${dim("(not found)")}`);
+    }
+  }
+  console.log();
+
+  if (detected.length === 0) {
+    console.log(yellow("  No supported tools detected."));
+    console.log(`\n  Add this to your tool's MCP config manually:\n`);
+    console.log(dim(`  ${JSON.stringify({
+      mcpServers: {
+        "context-vault": {
+          url: `${hostedUrl}/mcp`,
+          headers: { Authorization: `Bearer ${apiKey}` },
+        },
+      },
+    }, null, 2).split("\n").join("\n  ")}`));
+    console.log();
+    return;
+  }
+
+  // Select tools
+  let selected;
+  if (isNonInteractive) {
+    selected = detected;
+  } else {
+    console.log(bold("  Which tools should connect to your hosted vault?\n"));
+    for (let i = 0; i < detected.length; i++) {
+      console.log(`    ${i + 1}) ${detected[i].name}`);
+    }
+    console.log();
+    const answer = await prompt(
+      `  Select (${dim("1,2,3")} or ${dim('"all"')}):`,
+      "all"
+    );
+    if (answer === "all" || answer === "") {
+      selected = detected;
+    } else {
+      const nums = answer.split(/[,\s]+/).map((n) => parseInt(n, 10) - 1).filter((n) => n >= 0 && n < detected.length);
+      selected = nums.map((n) => detected[n]);
+      if (selected.length === 0) selected = detected;
+    }
+  }
+
+  // Configure each tool with hosted MCP endpoint
+  console.log(`\n  ${dim("[2/2]")}${bold(" Configuring tools...\n")}`);
+  for (const tool of selected) {
+    try {
+      if (tool.configType === "cli" && tool.id === "codex") {
+        configureCodexHosted(apiKey, hostedUrl);
+      } else if (tool.configType === "cli") {
+        configureClaudeHosted(apiKey, hostedUrl);
+      } else {
+        configureJsonToolHosted(tool, apiKey, hostedUrl);
+      }
+      console.log(`  ${green("+")} ${tool.name} — configured`);
+    } catch (e) {
+      console.log(`  ${red("x")} ${tool.name} — ${e.message}`);
+    }
+  }
+
+  console.log();
+  console.log(green("  ✓ Connected! Your AI tools can now access your hosted vault."));
+  console.log(dim(`  Endpoint: ${hostedUrl}/mcp`));
+  console.log();
+}
+
+function configureClaudeHosted(apiKey, hostedUrl) {
+  const env = { ...process.env };
+  delete env.CLAUDECODE;
+
+  try { execSync("claude mcp remove context-mcp -s user", { stdio: "pipe", env }); } catch {}
+  try { execSync("claude mcp remove context-vault -s user", { stdio: "pipe", env }); } catch {}
+
+  execSync(
+    `claude mcp add -s user --transport http context-mcp ${hostedUrl}/mcp`,
+    { stdio: "pipe", env }
+  );
+}
+
+function configureCodexHosted(apiKey, hostedUrl) {
+  try { execSync("codex mcp remove context-mcp", { stdio: "pipe" }); } catch {}
+  try { execSync("codex mcp remove context-vault", { stdio: "pipe" }); } catch {}
+
+  execSync(
+    `codex mcp add --transport http context-mcp ${hostedUrl}/mcp`,
+    { stdio: "pipe" }
+  );
+}
+
+function configureJsonToolHosted(tool, apiKey, hostedUrl) {
+  const configPath = tool.configPath;
+  const configDir = dirname(configPath);
+
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
+  }
+
+  let config = {};
+  if (existsSync(configPath)) {
+    const raw = readFileSync(configPath, "utf-8");
+    try {
+      config = JSON.parse(raw);
+    } catch {
+      const bakPath = configPath + ".bak";
+      copyFileSync(configPath, bakPath);
+      config = {};
+    }
+  }
+
+  if (!config[tool.configKey]) {
+    config[tool.configKey] = {};
+  }
+
+  delete config[tool.configKey]["context-vault"];
+
+  config[tool.configKey]["context-mcp"] = {
+    url: `${hostedUrl}/mcp`,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  };
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
 }
 
 // ─── UI Command ──────────────────────────────────────────────────────────────
@@ -847,6 +1050,14 @@ async function runUninstall() {
     console.log(`  ${dim("-")} Claude Code — not configured or not installed`);
   }
 
+  // Remove from Codex
+  try {
+    execSync("codex mcp remove context-mcp", { stdio: "pipe" });
+    console.log(`  ${green("+")} Removed from Codex`);
+  } catch {
+    console.log(`  ${dim("-")} Codex — not configured or not installed`);
+  }
+
   // Remove from JSON-configured tools
   for (const tool of TOOLS.filter((t) => t.configType === "json")) {
     if (!existsSync(tool.configPath)) continue;
@@ -980,6 +1191,9 @@ async function main() {
   switch (command) {
     case "setup":
       await runSetup();
+      break;
+    case "connect":
+      await runConnect();
       break;
     case "serve":
       await runServe();

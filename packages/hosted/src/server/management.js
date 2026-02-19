@@ -15,6 +15,7 @@ import {
   getMetaDb,
   validateApiKey,
 } from "../auth/meta-db.js";
+import { isGoogleOAuthConfigured, getAuthUrl, exchangeCode } from "../auth/google-oauth.js";
 import { createCheckoutSession, verifyWebhookEvent, getStripe, getTierLimits, isOverEntryLimit } from "../billing/stripe.js";
 import { writeEntry } from "@context-vault/core/capture";
 import { indexEntry } from "@context-vault/core/index";
@@ -165,7 +166,116 @@ export function createManagementRoutes(ctx) {
     return c.json({ deleted: true });
   });
 
-  // ─── User Registration (simplified — no Clerk yet) ─────────────────────────
+  // ─── Google OAuth ─────────────────────────────────────────────────────────
+
+  /** Redirect to Google OAuth consent screen */
+  api.get("/api/auth/google", (c) => {
+    if (!isGoogleOAuthConfigured()) {
+      return c.json({ error: "Google OAuth not configured" }, 503);
+    }
+    const url = getAuthUrl();
+    return c.redirect(url);
+  });
+
+  /** Handle Google OAuth callback — create/find user, auto-generate API key */
+  api.get("/api/auth/google/callback", async (c) => {
+    if (!isGoogleOAuthConfigured()) {
+      return c.json({ error: "Google OAuth not configured" }, 503);
+    }
+
+    const code = c.req.query("code");
+    const error = c.req.query("error");
+
+    if (error) {
+      // User denied consent or an error occurred — redirect to login with error
+      const appUrl = process.env.PUBLIC_URL || "";
+      return c.redirect(`${appUrl}/login?error=oauth_denied`);
+    }
+
+    if (!code) {
+      return c.json({ error: "Missing authorization code" }, 400);
+    }
+
+    let profile;
+    try {
+      profile = await exchangeCode(code);
+    } catch (err) {
+      console.error(JSON.stringify({
+        level: "error",
+        context: "google_oauth",
+        error: err.message,
+        ts: new Date().toISOString(),
+      }));
+      const appUrl = process.env.PUBLIC_URL || "";
+      return c.redirect(`${appUrl}/login?error=oauth_failed`);
+    }
+
+    const stmts = prepareMetaStatements(getMetaDb());
+    const masterSecret = process.env.VAULT_MASTER_SECRET;
+
+    // Check if user already exists by google_id or email
+    let existingUser = stmts.getUserByGoogleId.get(profile.googleId);
+    if (!existingUser) {
+      existingUser = stmts.getUserByEmail.get(profile.email);
+    }
+
+    let apiKeyRaw;
+
+    if (existingUser) {
+      // Existing user — find their most recent API key or generate a new one
+      const keys = stmts.listUserKeys.all(existingUser.id);
+      if (keys.length > 0) {
+        // Can't retrieve raw key — generate a new one for this session
+        apiKeyRaw = generateApiKey();
+        const hash = hashApiKey(apiKeyRaw);
+        const prefix = keyPrefix(apiKeyRaw);
+        const keyId = randomUUID();
+        stmts.createApiKey.run(keyId, existingUser.id, hash, prefix, "google-oauth");
+      } else {
+        apiKeyRaw = generateApiKey();
+        const hash = hashApiKey(apiKeyRaw);
+        const prefix = keyPrefix(apiKeyRaw);
+        const keyId = randomUUID();
+        stmts.createApiKey.run(keyId, existingUser.id, hash, prefix, "default");
+      }
+    } else {
+      // New user — create account with google_id
+      const userId = randomUUID();
+      apiKeyRaw = generateApiKey();
+      const hash = hashApiKey(apiKeyRaw);
+      const prefix = keyPrefix(apiKeyRaw);
+      const keyId = randomUUID();
+
+      const registerUser = getMetaDb().transaction(() => {
+        stmts.createUserWithGoogle.run(userId, profile.email, profile.name, "free", profile.googleId);
+        if (masterSecret) {
+          const { encryptedDek, dekSalt } = generateDek(masterSecret);
+          stmts.updateUserDek.run(encryptedDek, dekSalt, userId);
+        }
+        stmts.createApiKey.run(keyId, userId, hash, prefix, "default");
+      });
+
+      try {
+        registerUser();
+      } catch (err) {
+        console.error(JSON.stringify({
+          level: "error",
+          context: "google_oauth_registration",
+          email: profile.email,
+          error: err.message,
+          ts: new Date().toISOString(),
+        }));
+        const appUrl = process.env.PUBLIC_URL || "";
+        return c.redirect(`${appUrl}/login?error=registration_failed`);
+      }
+    }
+
+    // Redirect to app with the API key as a token (one-time, via URL fragment)
+    const appUrl = process.env.PUBLIC_URL || "";
+    return c.redirect(`${appUrl}/auth/callback#token=${apiKeyRaw}`);
+  });
+
+  // ─── User Registration (email — legacy, kept for backwards compat) ────────
 
   /** Register a new user and return their first API key */
   api.post("/api/register", async (c) => {

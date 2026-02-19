@@ -342,6 +342,68 @@ export function createVaultApiRoutes(ctx, masterSecret) {
     }
   });
 
+  // ─── POST /api/vault/import/bulk — Bulk import entries ──────────────────────
+
+  api.post("/api/vault/import/bulk", bearerAuth(), rateLimit(), async (c) => {
+    const user = c.get("user");
+    const userCtx = buildUserCtx(ctx, user, masterSecret);
+
+    const data = await c.req.json().catch(() => null);
+    if (!data || !Array.isArray(data.entries)) {
+      return c.json({ error: "Invalid body — expected { entries: [...] }", code: "INVALID_INPUT" }, 400);
+    }
+
+    if (data.entries.length > 500) {
+      return c.json({ error: "Maximum 500 entries per request", code: "LIMIT_EXCEEDED" }, 400);
+    }
+
+    // Entry limit enforcement
+    if (userCtx.userId) {
+      const { c: entryCount } = ctx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ?").get(userCtx.userId);
+      const remaining = isOverEntryLimit(user.tier, entryCount) ? 0 : (user.tier === "free" ? 100 - entryCount : Infinity);
+      if (remaining <= 0) {
+        return c.json({ error: "Entry limit reached. Upgrade to Pro.", code: "LIMIT_EXCEEDED" }, 403);
+      }
+    }
+
+    let imported = 0;
+    let failed = 0;
+    const errors = [];
+
+    for (const entry of data.entries) {
+      try {
+        const validationError = validateEntryInput(entry);
+        if (validationError) {
+          failed++;
+          errors.push(`${entry.title || entry.id || "unknown"}: ${validationError.error}`);
+          continue;
+        }
+
+        await captureAndIndex(
+          userCtx,
+          {
+            kind: entry.kind,
+            title: entry.title,
+            body: entry.body,
+            meta: entry.meta,
+            tags: entry.tags,
+            source: entry.source || "bulk-import",
+            identity_key: entry.identity_key,
+            expires_at: entry.expires_at,
+            userId: userCtx.userId,
+          },
+          indexEntry
+        );
+        imported++;
+      } catch (err) {
+        failed++;
+        errors.push(`${entry.title || entry.id || "unknown"}: ${err.message}`);
+      }
+    }
+
+    return c.json({ imported, failed, errors: errors.slice(0, 10) });
+  });
+
   // ─── GET /api/vault/status — Vault diagnostics + usage stats ───────────────
 
   api.get("/api/vault/status", (c) => {
