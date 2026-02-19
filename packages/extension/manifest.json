@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Context Vault",
-  "version": "2.4.2",
+  "version": "2.5.0",
   "description": "Search your personal knowledge vault and inject context directly into ChatGPT, Claude, and Gemini conversations. Save insights from any webpage with right-click.",
   "homepage_url": "https://github.com/fellanH/context-mcp",
   "permissions": [
@@ -36,7 +36,9 @@
         "https://gemini.google.com/*",
         "https://claude.ai/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
