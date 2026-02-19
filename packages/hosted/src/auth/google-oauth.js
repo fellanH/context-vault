@@ -13,18 +13,33 @@ const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
  * Check if Google OAuth is configured.
  */
 export function isGoogleOAuthConfigured() {
-  return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REDIRECT_URI);
+  return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+}
+
+/**
+ * Resolve the redirect URI — explicit env var, or derive from the request origin.
+ * This allows localhost/dev to work without setting GOOGLE_REDIRECT_URI.
+ * @param {Request} [req] - Incoming request (used to derive origin when env var is unset)
+ * @returns {string}
+ */
+export function getRedirectUri(req) {
+  if (process.env.GOOGLE_REDIRECT_URI) return process.env.GOOGLE_REDIRECT_URI;
+  const origin = req?.headers?.get?.("x-forwarded-proto")
+    ? `${req.headers.get("x-forwarded-proto")}://${req.headers.get("host")}`
+    : req?.url && new URL(req.url).origin;
+  return `${origin || "http://localhost:3000"}/api/auth/google/callback`;
 }
 
 /**
  * Generate the Google OAuth consent URL.
+ * @param {Request} [req] - Incoming request (for redirect URI derivation)
  * @param {string} [state] - Optional CSRF state parameter
  * @returns {string} Authorization URL
  */
-export function getAuthUrl(state) {
+export function getAuthUrl(req, state) {
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID,
-    redirect_uri: process.env.GOOGLE_REDIRECT_URI,
+    redirect_uri: getRedirectUri(req),
     response_type: "code",
     scope: "openid email profile",
     access_type: "offline",
@@ -39,7 +54,7 @@ export function getAuthUrl(state) {
  * @param {string} code - The authorization code from Google
  * @returns {Promise<{ googleId: string, email: string, name: string | null, picture: string | null }>}
  */
-export async function exchangeCode(code) {
+export async function exchangeCode(code, redirectUri) {
   // Exchange code for tokens
   const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
@@ -48,7 +63,7 @@ export async function exchangeCode(code) {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID,
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: process.env.GOOGLE_REDIRECT_URI,
+      redirect_uri: redirectUri,
       grant_type: "authorization_code",
     }),
   });

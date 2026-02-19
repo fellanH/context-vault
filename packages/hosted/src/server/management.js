@@ -15,7 +15,7 @@ import {
   getMetaDb,
   validateApiKey,
 } from "../auth/meta-db.js";
-import { isGoogleOAuthConfigured, getAuthUrl, exchangeCode } from "../auth/google-oauth.js";
+import { isGoogleOAuthConfigured, getAuthUrl, exchangeCode, getRedirectUri } from "../auth/google-oauth.js";
 import { createCheckoutSession, verifyWebhookEvent, getStripe, getTierLimits, isOverEntryLimit } from "../billing/stripe.js";
 import { writeEntry } from "@context-vault/core/capture";
 import { indexEntry } from "@context-vault/core/index";
@@ -173,7 +173,7 @@ export function createManagementRoutes(ctx) {
     if (!isGoogleOAuthConfigured()) {
       return c.json({ error: "Google OAuth not configured" }, 503);
     }
-    const url = getAuthUrl();
+    const url = getAuthUrl(c.req.raw);
     return c.redirect(url);
   });
 
@@ -196,9 +196,10 @@ export function createManagementRoutes(ctx) {
       return c.json({ error: "Missing authorization code" }, 400);
     }
 
+    const redirectUri = getRedirectUri(c.req.raw);
     let profile;
     try {
-      profile = await exchangeCode(code);
+      profile = await exchangeCode(code, redirectUri);
     } catch (err) {
       console.error(JSON.stringify({
         level: "error",
