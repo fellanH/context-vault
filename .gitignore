@@ -9,3 +9,4 @@ config.json
 *.tgz
 .archive/
 packages/extension/dist/
+extension.zip
