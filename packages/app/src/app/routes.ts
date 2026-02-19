@@ -8,6 +8,7 @@ import { Search } from "./pages/Search";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { AuthCallback } from "./pages/AuthCallback";
+import { NotFound, RootErrorBoundary } from "./pages/NotFound";
 import { ApiKeys } from "./pages/settings/ApiKeys";
 import { Billing } from "./pages/settings/Billing";
 import { DataManagement } from "./pages/settings/DataManagement";
@@ -20,6 +21,7 @@ export const router = createBrowserRouter([
   {
     path: "/",
     Component: RootLayout,
+    ErrorBoundary: RootErrorBoundary,
     children: [
       { index: true, Component: Dashboard },
       { path: "search", Component: Search },
@@ -32,4 +34,5 @@ export const router = createBrowserRouter([
       { path: "settings/account", Component: Account },
     ],
   },
+  { path: "*", Component: NotFound },
 ]);
