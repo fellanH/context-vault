@@ -18,7 +18,7 @@ npm install -g context-vault
 context-vault setup
 ```
 
-Setup auto-detects your tools (Claude Code, Claude Desktop, Cursor, Windsurf, Cline), downloads the embedding model, seeds your vault with a starter entry, and verifies everything works. Then open your AI tool and try:
+Setup auto-detects your tools (Claude Code, Codex, Claude Desktop, Cursor, Windsurf, Antigravity, Cline), downloads the embedding model, seeds your vault with a starter entry, and verifies everything works. Then open your AI tool and try:
 
 > "Search my vault for getting started"
 
@@ -34,7 +34,7 @@ For hosted MCP setup (Claude Code, Cursor, GPT Actions), see [`docs/distribution
 
 ## Tools
 
-The server exposes five tools. Your AI agent calls them automatically — you don't invoke them directly.
+The server exposes six tools. Your AI agent calls them automatically — you don't invoke them directly.
 
 | Tool | Type | Description |
 |------|------|-------------|
@@ -42,6 +42,7 @@ The server exposes five tools. Your AI agent calls them automatically — you do
 | `save_context` | Write | Save new knowledge or update existing entries by ID |
 | `list_context` | Browse | List vault entries with filtering and pagination |
 | `delete_context` | Delete | Remove an entry by ID (file + index) |
+| `submit_feedback` | Write | Submit bug reports or feature requests |
 | `context_status` | Diag | Show resolved config, health, and per-kind file counts |
 
 ### `get_context` — Search your vault
@@ -119,10 +120,14 @@ Shows vault path, database size, file counts per kind, embedding coverage, and a
 | Command | Description |
 |---------|-------------|
 | `context-vault setup` | Interactive installer — detects tools, writes configs |
+| `context-vault connect --key cv_...` | Connect AI tools to hosted vault |
+| `context-vault serve` | Start the MCP server (used by AI clients) |
+| `context-vault ui [--port 3141]` | Launch web dashboard |
 | `context-vault status` | Show vault health, paths, and entry counts |
 | `context-vault reindex` | Rebuild search index from vault files |
 | `context-vault update` | Check for and install updates |
-| `context-vault ui` | Launch web dashboard (uses `packages/app`) |
+| `context-vault uninstall` | Remove MCP configs and optionally data |
+| `context-vault migrate` | Migrate vault between local and hosted |
 
 ### AI Tool Examples
 
@@ -281,10 +286,14 @@ context-vault <command> [options]
 | Command | Description |
 |---------|-------------|
 | `setup` | Interactive MCP installer — detects tools, writes configs |
+| `connect --key cv_...` | Connect AI tools to hosted vault |
 | `serve` | Start the MCP server (used by AI clients in MCP configs) |
 | `ui [--port 3141]` | Launch the web dashboard (serves `packages/app`) |
 | `reindex` | Rebuild search index from knowledge files |
 | `status` | Show vault diagnostics (paths, counts, health) |
+| `update` | Check for and install updates |
+| `uninstall` | Remove MCP configs and optionally data |
+| `migrate --to-hosted/--to-local` | Migrate vault between local and hosted |
 
 If running from source without a global install, use `npx context-vault` or `npm run cli --` instead of `context-vault`.
 
@@ -297,7 +306,7 @@ npm install -g context-vault
 context-vault setup
 ```
 
-The `setup` command auto-detects installed tools (Claude Code, Claude Desktop, Cursor, Windsurf, Cline), lets you pick which to configure, and writes the correct MCP config for each. Existing configs are preserved — only the `context-vault` entry is added or updated.
+The `setup` command auto-detects installed tools (Claude Code, Codex, Claude Desktop, Cursor, Windsurf, Antigravity, Cline), lets you pick which to configure, and writes the correct MCP config for each. Existing configs are preserved — only the `context-vault` entry is added or updated.
 
 ### Local Development
 
@@ -367,7 +376,7 @@ You can also pass config via environment variables in the MCP config block:
 
 ### How the Server Runs
 
-The server is an MCP (Model Context Protocol) process — you don't start or stop it manually. Your AI client (Claude Code, Cursor, Cline, etc.) spawns it automatically as a child process when a session begins, based on the `mcpServers` config above. The server communicates over stdio and lives for the duration of the session. When the session ends, the client terminates the process and SQLite cleans up its WAL files.
+The server is an MCP (Model Context Protocol) process — you don't start or stop it manually. Your AI client (Claude Code, Codex, Cursor, Windsurf, Cline, etc.) spawns it automatically as a child process when a session begins, based on the `mcpServers` config above. The server communicates over stdio and lives for the duration of the session. When the session ends, the client terminates the process and SQLite cleans up its WAL files.
 
 This means:
 - **No daemon, no port, no background service.** The server only runs while your AI client is active.
@@ -379,7 +388,9 @@ This means:
 
 The web dashboard is built with React and Vite in `packages/app`. It provides a full UI for browsing, searching, and managing your vault entries. The `context-vault ui` command serves the built app from `packages/app/dist`.
 
-The standalone marketing website lives in `packages/marketing` (landing page + blog) and is intentionally isolated from the product dashboard app.
+The app login page uses a mode-first selection pattern — users choose Local Vault or Hosted Vault before seeing the relevant form (folder path or Google OAuth/API key).
+
+The standalone marketing website lives in `packages/marketing` (landing page, blog, and `/get-started` setup guide) and is intentionally isolated from the product dashboard app.
 
 ## How It Works
 
@@ -408,39 +419,46 @@ Requires **Node.js 20** or later.
 ### Architecture
 
 ```
-src/
-├── core/                Shared utilities (config, frontmatter, files, status)
-├── capture/             Write path — creates .md files in the vault
-├── index/               Sync layer — SQLite schema, embeddings, reindex
-├── retrieve/            Read path — hybrid FTS5 + vector search
-└── server/              MCP server — wires layers into tool handlers
-
-bin/
-└── cli.js               CLI entry point (setup, serve, ui, reindex, status)
-
-packages/app/
-├── src/                 React app source (Vite + React Router)
-├── dist/                Built static assets (served by `ui` command)
-└── vite.config.ts       Vite configuration
-
-packages/marketing/
-├── src/                 Marketing site source (landing + blog)
-└── vite.config.ts       Vite configuration
+packages/
+├── core/                Shared library (capture, index, retrieve, tools)
+│   └── src/
+│       ├── core/        Config, categories, frontmatter, files, status
+│       ├── capture/     Write path — creates .md files in the vault
+│       ├── index/       Sync layer — SQLite schema, embeddings, reindex
+│       ├── retrieve/    Read path — hybrid FTS5 + vector search
+│       └── server/      MCP tool handlers
+├── local/               Local MCP server (published to npm as `context-vault`)
+│   ├── bin/cli.js       CLI entry (setup, connect, serve, ui, reindex, status, ...)
+│   ├── src/server/      MCP stdio server
+│   └── scripts/         Local HTTP server, postinstall, prepack
+├── hosted/              Cloud server (Hono HTTP, Fly.io, auth, encryption, billing)
+├── app/                 React dashboard SPA (Vite + React Router)
+├── marketing/           Landing page + blog + /get-started (Vite)
+└── extension/           Chrome extension (Manifest v3)
 ```
 
-Each layer has a single responsibility and can be understood independently. The server is the only module that imports across layer boundaries.
+Each layer has a single responsibility and can be understood independently. Both `local` and `hosted` are thin wrappers around `core`.
 
-### Module Dependency Graph
+### Dependency Graph
 
 ```
-core/files.js, core/frontmatter.js  ←  capture/
-                                              ↑
-core/config.js                          server/  ←  packages/local/bin/cli.js
-                                              ↑
-index/embed.js  ←  retrieve/        ←   packages/app/ (web dashboard)
-                                      ←   packages/marketing/ (marketing site)
-                                              ↑
-index/db.js     ←──────────────────  (all consumers)
+              ┌─────────────┐
+              │  @cv/core   │  Shared: capture, index, retrieve, tools
+              └──────┬──────┘
+           ┌─────────┼─────────┐
+           ▼         ▼         ▼
+      ┌────────┐ ┌────────┐ ┌───────────┐
+      │ local  │ │ hosted │ │ extension │
+      │ (npm)  │ │(Fly.io)│ │ (Chrome)  │
+      └────────┘ └───┬────┘ └─────┬─────┘
+                     │             │
+              ┌──────┴──────┐     │
+              │  app + mkt  │     │
+              │  (embedded) │     │
+              └─────────────┘     │
+                     ▲            │
+                     └────────────┘
+                   (REST API calls)
 ```
 
 ## Troubleshooting

@@ -132,13 +132,15 @@ Cloud deployment on Fly.io. Wraps core with HTTP transport, auth, encryption, an
 React SPA dashboard for managing vault entries via the hosted API.
 
 - React 19, TypeScript, Tailwind CSS 4, Radix UI, React Router 7, TanStack Query
-- Auth via Google OAuth (see `src/components/AuthProvider.tsx`)
+- Auth via Google OAuth or local vault connection (see `src/components/AuthProvider.tsx`)
+- `VaultMode` type (`"local" | "hosted"`) exposed via auth context — replaces inline `user?.id === "local"` checks
+- Login uses mode-first selection pattern (Local Vault / Hosted Vault cards, matching the extension)
 - Pages: Dashboard, Search, Knowledge/Entities/Events browsers, Settings (API keys, billing, data, account)
 - Built by Vite, output served by the hosted server
 
 ### `packages/marketing` — `@context-vault/marketing`
 
-Static landing page. Same UI stack as app (Radix, Tailwind). Built by Vite, served by hosted server.
+Static marketing site with landing page, blog, and `/get-started` mode-selection page. Same UI stack as app (Radix, Tailwind). Built by Vite, served by hosted server.
 
 ### `packages/extension` — `@context-vault/extension`
 
@@ -271,12 +273,14 @@ CREATE VIRTUAL TABLE vault_vec USING vec0(embedding float[384]);
 Defaults  →  Config File  →  Env Vars  →  CLI Args
 ```
 
+Both `CONTEXT_VAULT_*` and `CONTEXT_MCP_*` env var prefixes are supported. `CONTEXT_VAULT_*` takes priority.
+
 | Setting | Default | Env Var | CLI Flag |
 |---------|---------|---------|----------|
-| Vault dir | `~/vault` | `CONTEXT_MCP_VAULT_DIR` | `--vault-dir` |
-| Data dir | `~/.context-mcp` | `CONTEXT_MCP_DATA_DIR` | `--data-dir` |
-| DB path | `~/.context-mcp/vault.db` | `CONTEXT_MCP_DB_PATH` | `--db-path` |
-| Dev dir | `~/dev` | `CONTEXT_MCP_DEV_DIR` | `--dev-dir` |
+| Vault dir | `~/vault` | `CONTEXT_VAULT_VAULT_DIR` | `--vault-dir` |
+| Data dir | `~/.context-mcp` | `CONTEXT_VAULT_DATA_DIR` | `--data-dir` |
+| DB path | `~/.context-mcp/vault.db` | `CONTEXT_VAULT_DB_PATH` | `--db-path` |
+| Dev dir | `~/dev` | `CONTEXT_VAULT_DEV_DIR` | `--dev-dir` |
 | Event decay | 30 days | `CONTEXT_MCP_EVENT_DECAY_DAYS` | `--event-decay-days` |
 
 Config file location: `~/.context-mcp/config.json`
@@ -349,20 +353,29 @@ The Dockerfile (`packages/hosted/Dockerfile`) is a two-stage build:
 ## Scripts
 
 ```bash
-# Root
+# Root shortcuts
 npm test                          # Vitest (unit + integration)
-npm run cli                       # Run local MCP server
-npm run ui                        # Build app then launch local UI
+npm run test:watch                # Vitest in watch mode
+npm run cli                       # Run local CLI (e.g. npm run cli -- setup)
+npm run ui                        # Build app then launch local dashboard
+npm run app:dev                   # App dev server (Vite)
+npm run app:build                 # App production build
+npm run marketing:dev             # Marketing dev server (Vite)
+npm run marketing:build           # Marketing production build
+npm run extension:dev             # Extension watch build
+npm run extension:build           # Extension production build
+npm run hosted:dev                # Hosted server with --watch
+npm run bump                      # Bump version across all packages
+npm run release                   # Publish packages/local to npm
 npm run deploy                    # Fly.io production deploy
 npm run docker:build              # Build Docker image
 npm run docker:run                # Run Docker container locally
 
-# Per-workspace
-npm run dev -w packages/app       # App dev server
-npm run dev -w packages/marketing # Marketing dev server
-npm run dev -w packages/extension # Extension watch build
-npm run build -w packages/extension  # Extension production build
-npm run dev -w packages/hosted    # Hosted server with --watch
+# Per-workspace (equivalent)
+npm run dev -w packages/app       # Same as npm run app:dev
+npm run dev -w packages/marketing # Same as npm run marketing:dev
+npm run dev -w packages/extension # Same as npm run extension:dev
+npm run dev -w packages/hosted    # Same as npm run hosted:dev
 ```
 
 ---

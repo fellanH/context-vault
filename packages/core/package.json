@@ -21,11 +21,19 @@
     "./core/frontmatter": "./src/core/frontmatter.js",
     "./core/status": "./src/core/status.js"
   },
-  "files": ["src/"],
+  "files": [
+    "src/"
+  ],
   "license": "MIT",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "author": "Felix Hellstrom",
-  "repository": { "type": "git", "url": "git+https://github.com/fellanH/context-mcp.git", "directory": "packages/core" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fellanH/context-mcp.git",
+    "directory": "packages/core"
+  },
   "homepage": "https://github.com/fellanH/context-mcp",
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",

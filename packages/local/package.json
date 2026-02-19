@@ -24,13 +24,36 @@
     "LICENSE"
   ],
   "license": "MIT",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "author": "Felix Hellstrom",
-  "repository": { "type": "git", "url": "git+https://github.com/fellanH/context-mcp.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fellanH/context-mcp.git"
+  },
   "homepage": "https://github.com/fellanH/context-mcp",
-  "bugs": { "url": "https://github.com/fellanH/context-mcp/issues" },
-  "keywords": ["mcp", "model-context-protocol", "ai", "knowledge-base", "knowledge-management", "vault", "rag", "sqlite", "embeddings", "claude", "cursor", "cline", "windsurf"],
-  "bundledDependencies": ["@context-vault/core"],
+  "bugs": {
+    "url": "https://github.com/fellanH/context-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "knowledge-base",
+    "knowledge-management",
+    "vault",
+    "rag",
+    "sqlite",
+    "embeddings",
+    "claude",
+    "cursor",
+    "cline",
+    "windsurf"
+  ],
+  "bundledDependencies": [
+    "@context-vault/core"
+  ],
   "dependencies": {
     "@context-vault/core": "^2.4.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
