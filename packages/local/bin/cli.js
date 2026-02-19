@@ -650,15 +650,32 @@ This is an example entry showing the decision format. Feel free to delete it.
 // ─── UI Command ──────────────────────────────────────────────────────────────
 
 function runUi() {
-  const serveScript = resolve(ROOT, "ui", "serve.js");
-  if (!existsSync(serveScript)) {
-    console.error(red("Error: ui/serve.js not found."));
+  const appDist = resolve(ROOT, "..", "app", "dist");
+  if (!existsSync(appDist) || !existsSync(join(appDist, "index.html"))) {
+    console.error(red("Web dashboard not found."));
+    console.error(dim("  From repo: npm run build --workspace=packages/app"));
+    console.error(dim("  Then run: context-mcp ui"));
     process.exit(1);
   }
 
-  const uiArgs = args.slice(1);
-  const child = fork(serveScript, uiArgs, { stdio: "inherit" });
+  const port = getFlag("--port") || "3141";
+  const localServer = join(ROOT, "scripts", "local-server.js");
+  if (!existsSync(localServer)) {
+    console.error(red("Local server not found."));
+    process.exit(1);
+  }
+
+  const child = fork(localServer, [`--port=${port}`], { stdio: "inherit" });
   child.on("exit", (code) => process.exit(code ?? 0));
+
+  // Open browser after a short delay
+  setTimeout(() => {
+    try {
+      const url = `http://localhost:${port}`;
+      const open = PLATFORM === "darwin" ? "open" : PLATFORM === "win32" ? "start" : "xdg-open";
+      execSync(`${open} ${url}`, { stdio: "ignore" });
+    } catch {}
+  }, 1500);
 }
 
 // ─── Reindex Command ─────────────────────────────────────────────────────────

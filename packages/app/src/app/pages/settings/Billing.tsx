@@ -8,6 +8,7 @@ import { TierBadge } from "../../components/TierBadge";
 import { Check, Loader2 } from "lucide-react";
 import { useAuth } from "../../lib/auth";
 import { useUsage, useCheckout } from "../../lib/hooks";
+import { formatMegabytes } from "../../lib/format";
 import { toast } from "sonner";
 
 const plans = [
@@ -104,6 +105,7 @@ export function Billing() {
                 limit={usage.storage.limitMb}
                 label="Storage"
                 unit="MB"
+                formatValue={formatMegabytes}
               />
               {usage.requestsToday.limit === Infinity ? (
                 <div className="space-y-1.5">

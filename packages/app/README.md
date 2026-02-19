@@ -1,6 +1,8 @@
 # Context Vault App
 
-Web app for hosted Context Vault accounts. Built with React Router, React Query, Tailwind CSS, and shadcn/ui.
+Web app for Context Vault. Built with React Router, React Query, Tailwind CSS, and shadcn/ui.
+
+> **Note:** The app supports both **local** (no auth, SQLite vault) and **hosted** (API key auth) modes. Run `context-mcp ui` for local mode.
 
 ## What It Includes
 
@@ -12,6 +14,8 @@ Web app for hosted Context Vault accounts. Built with React Router, React Query,
 - Settings for API keys, billing, data import/export, and account management
 
 ## Backend Contract
+
+**Target:** The app should support both local (MCP + SQLite) and hosted (HTTP API) backends. Currently implemented for hosted only.
 
 This app talks directly to the hosted server endpoints under `/api`:
 

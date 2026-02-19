@@ -15,6 +15,7 @@ import type {
   ApiSearchResult,
   ApiKeyListItem,
   ApiUsageResponse,
+  ApiVaultStatusResponse,
   Category,
 } from "./types";
 
@@ -203,9 +204,15 @@ export function useExportVault() {
 
 // ─── Vault Status ────────────────────────────────────────────────────────────
 
-export function useVaultStatus() {
+interface VaultStatusOpts {
+  enabled?: boolean;
+  refetchInterval?: number;
+}
+
+export function useVaultStatus(opts: VaultStatusOpts = {}) {
   return useQuery({
     queryKey: ["vaultStatus"],
-    queryFn: () => api.get<Record<string, unknown>>("/vault/status"),
+    queryFn: () => api.get<ApiVaultStatusResponse>("/vault/status"),
+    ...opts,
   });
 }

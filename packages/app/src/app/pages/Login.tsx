@@ -6,19 +6,20 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { Key, Loader2 } from "lucide-react";
+import { Key, Loader2, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 
 export function Login() {
-  const { loginWithApiKey } = useAuth();
+  const { loginWithApiKey, loginWithLocalVault } = useAuth();
   const navigate = useNavigate();
   const [apiKey, setApiKey] = useState("");
+  const [vaultDir, setVaultDir] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localSubmitting, setLocalSubmitting] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleApiKeySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!apiKey.trim() || isSubmitting) return;
-
     setIsSubmitting(true);
     try {
       await loginWithApiKey(apiKey.trim());
@@ -39,6 +40,29 @@ export function Login() {
     }
   };
 
+  const handleLocalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (localSubmitting) return;
+    setLocalSubmitting(true);
+    try {
+      await loginWithLocalVault(vaultDir.trim());
+      toast.success("Connected to local vault");
+      navigate("/");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 404) {
+          toast.error("Local vault requires context-mcp ui. Run: context-mcp ui");
+        } else {
+          toast.error(err.message);
+        }
+      } else {
+        toast.error("Failed to connect to local vault");
+      }
+    } finally {
+      setLocalSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm space-y-6">
@@ -49,10 +73,62 @@ export function Login() {
 
         <Card>
           <CardHeader className="pb-4">
-            <CardTitle className="text-lg">API Key Login</CardTitle>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <FolderOpen className="size-5" />
+              Local vault
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Connect to a local vault folder. No authentication required.
+            </p>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleLocalSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="vaultDir">Vault folder path</Label>
+                <Input
+                  id="vaultDir"
+                  type="text"
+                  placeholder="e.g. ~/vault or /Users/me/vault"
+                  value={vaultDir}
+                  onChange={(e) => setVaultDir(e.target.value)}
+                  disabled={localSubmitting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to use the default vault (~/vault)
+                </p>
+              </div>
+              <Button type="submit" variant="default" className="w-full" disabled={localSubmitting}>
+                {localSubmitting ? (
+                  <>
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  "Connect to local vault"
+                )}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-background px-2 text-muted-foreground">Or</span>
+          </div>
+        </div>
+
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Key className="size-5" />
+              API Key (hosted)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleApiKeySubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="apiKey">API Key</Label>
                 <div className="relative">
@@ -68,15 +144,14 @@ export function Login() {
                   />
                 </div>
               </div>
-
-              <Button type="submit" className="w-full" disabled={isSubmitting}>
+              <Button type="submit" variant="secondary" className="w-full" disabled={isSubmitting}>
                 {isSubmitting ? (
                   <>
                     <Loader2 className="size-4 mr-2 animate-spin" />
                     Signing in...
                   </>
                 ) : (
-                  "Sign in"
+                  "Sign in with API key"
                 )}
               </Button>
             </form>

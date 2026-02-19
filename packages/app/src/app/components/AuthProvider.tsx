@@ -9,40 +9,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(!!getStoredToken());
 
-  // On mount: revalidate stored token
+  // On mount: revalidate stored token, or detect local mode (no auth required)
   useEffect(() => {
     const storedToken = getStoredToken();
-    if (!storedToken) {
-      setIsLoading(false);
-      return;
-    }
 
+    // Try /api/me — works without token in local mode
     api.get<ApiUserResponse>("/me")
       .then((raw) => {
-        setUser(transformUser(raw));
+        const u = transformUser(raw);
+        setUser(u);
+        // Local mode: no token needed; use "local" so isAuthenticated is true
+        if (!storedToken && raw.userId === "local") {
+          setStoredToken("local");
+          setToken("local");
+        } else if (storedToken) {
+          setToken(storedToken);
+        } else {
+          setToken("local");
+        }
       })
       .catch(() => {
-        clearStoredToken();
-        setToken(null);
-        setUser(null);
+        if (storedToken) {
+          clearStoredToken();
+          setToken(null);
+          setUser(null);
+        }
       })
       .finally(() => setIsLoading(false));
   }, []);
 
   const loginWithApiKey = useCallback(async (key: string) => {
-    // Store key first so the api client can use it
     setStoredToken(key);
     setToken(key);
-
     try {
       const raw = await api.get<ApiUserResponse>("/me");
       setUser(transformUser(raw));
     } catch (err) {
-      // Roll back on failure
       clearStoredToken();
       setToken(null);
       setUser(null);
       throw err;
+    }
+  }, []);
+
+  const loginWithLocalVault = useCallback(async (vaultDir: string) => {
+    if (vaultDir.trim()) {
+      const raw = await api.post<ApiUserResponse>("/local/connect", { vaultDir: vaultDir.trim() });
+      setStoredToken("local");
+      setToken("local");
+      setUser(transformUser(raw));
+    } else {
+      const raw = await api.get<ApiUserResponse>("/me");
+      setStoredToken("local");
+      setToken("local");
+      setUser(transformUser(raw));
     }
   }, []);
 
@@ -76,10 +96,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: !!token && !!user,
       isLoading,
       loginWithApiKey,
+      loginWithLocalVault,
       register,
       logout,
     }),
-    [user, token, isLoading, loginWithApiKey, register, logout]
+    [user, token, isLoading, loginWithApiKey, loginWithLocalVault, register, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

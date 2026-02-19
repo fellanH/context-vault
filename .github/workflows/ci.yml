@@ -59,7 +59,7 @@ jobs:
       - name: Wait for staging health
         run: |
           set -euo pipefail
-          URL="https://context-vault-staging.fly.dev/health"
+          URL="https://context-vault.fly.dev/health"
           for i in {1..30}; do
             code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$URL" || true)
             if [ "$code" = "200" ]; then
@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: bash scripts/smoke-test.sh https://context-vault-staging.fly.dev
+      - run: bash scripts/smoke-test.sh https://context-vault.fly.dev
 
   deploy-production:
     needs: smoke-staging

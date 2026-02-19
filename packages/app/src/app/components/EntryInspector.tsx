@@ -87,7 +87,7 @@ export function EntryInspector({ entry, open, onOpenChange }: EntryInspectorProp
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="sm:max-w-2xl">
+        <SheetContent className="sm:max-w-2xl p-0 gap-0">
           <SheetHeader>
             <div className="space-y-3">
               {/* Breadcrumbs */}
@@ -127,71 +127,71 @@ export function EntryInspector({ entry, open, onOpenChange }: EntryInspectorProp
             </div>
           </SheetHeader>
 
-          <Separator className="my-6" />
+          <Separator />
 
-          <Tabs defaultValue="content" className="h-[calc(100vh-16rem)]">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="content">Content</TabsTrigger>
-              <TabsTrigger value="metadata">Metadata</TabsTrigger>
-            </TabsList>
+          <div className="px-4 pb-4">
+            <Tabs defaultValue="content" className="h-[calc(100vh-13rem)]">
+              <TabsList className="grid w-full grid-cols-2 mt-4">
+                <TabsTrigger value="content">Content</TabsTrigger>
+                <TabsTrigger value="metadata">Metadata</TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="content" className="h-full">
-              <ScrollArea className="h-full pr-4">
-                <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <div
-                    className="whitespace-pre-wrap font-['Inter']"
-                    dangerouslySetInnerHTML={{
-                      __html: entry.body
-                        .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-                        .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-                        .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-                        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-                        .replace(/`(.+?)`/g, "<code>$1</code>")
-                        .replace(/^- (.+)$/gm, "<li>$1</li>")
-                        .replace(/(<li>.*<\/li>)/s, "<ul>$1</ul>"),
-                    }}
-                  />
-                </div>
-              </ScrollArea>
-            </TabsContent>
+              <TabsContent value="content" className="h-full">
+                <ScrollArea className="h-full pr-2">
+                  <div className="prose prose-sm dark:prose-invert max-w-none pr-2">
+                    <div
+                      className="whitespace-pre-wrap font-['Inter']"
+                      dangerouslySetInnerHTML={{
+                        __html: entry.body
+                          .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+                          .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+                          .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+                          .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+                          .replace(/`(.+?)`/g, "<code>$1</code>")
+                          .replace(/^- (.+)$/gm, "<li>$1</li>")
+                          .replace(/(<li>.*<\/li>)/s, "<ul>$1</ul>"),
+                      }}
+                    />
+                  </div>
+                </ScrollArea>
+              </TabsContent>
 
-            <TabsContent value="metadata" className="h-full">
-              <ScrollArea className="h-full pr-4">
-                <div className="space-y-4">
-                  <div className="grid gap-3">
-                    <div className="space-y-1.5">
+              <TabsContent value="metadata" className="h-full">
+                <ScrollArea className="h-full pr-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-2">
+                    <div className="space-y-1.5 rounded-md border border-border/60 p-3 sm:col-span-2">
                       <Label className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Hash className="size-3" />
                         ID
                       </Label>
-                      <code className="block px-3 py-2 bg-muted rounded text-xs font-mono">
+                      <code className="block bg-muted rounded px-2.5 py-2 text-xs font-mono break-all">
                         {entry.id}
                       </code>
                     </div>
 
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 rounded-md border border-border/60 p-3">
                       <Label className="flex items-center gap-2 text-xs text-muted-foreground">
                         <FileText className="size-3" />
                         Category
                       </Label>
-                      <div className="px-3 py-2">
+                      <div>
                         <Badge variant="outline">{entry.category}</Badge>
                       </div>
                     </div>
 
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 rounded-md border border-border/60 p-3">
                       <Label className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Tag className="size-3" />
                         Kind
                       </Label>
-                      <div className="px-3 py-2">
+                      <div>
                         <Badge
                           variant={
                             entry.category === "knowledge"
                               ? "default"
                               : entry.category === "entity"
-                              ? "outline"
-                              : "secondary"
+                                ? "outline"
+                                : "secondary"
                           }
                         >
                           {entry.kind}
@@ -199,65 +199,65 @@ export function EntryInspector({ entry, open, onOpenChange }: EntryInspectorProp
                       </div>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <Label className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Tag className="size-3" />
-                        Tags
-                      </Label>
-                      <div className="px-3 py-2 flex flex-wrap gap-1">
-                        {entry.tags.map((tag) => (
-                          <Badge key={tag} variant="outline" className="text-xs">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 rounded-md border border-border/60 p-3">
                       <Label className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Calendar className="size-3" />
                         Created
                       </Label>
-                      <div className="px-3 py-2 text-sm">
-                        {entry.created.toLocaleString()}
-                      </div>
+                      <div className="text-sm">{entry.created.toLocaleString()}</div>
                     </div>
 
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 rounded-md border border-border/60 p-3">
                       <Label className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Calendar className="size-3" />
                         Updated
                       </Label>
-                      <div className="px-3 py-2 text-sm">
-                        {entry.updated.toLocaleString()}
+                      <div className="text-sm">{entry.updated.toLocaleString()}</div>
+                    </div>
+
+                    <div className="space-y-1.5 rounded-md border border-border/60 p-3 sm:col-span-2">
+                      <Label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Tag className="size-3" />
+                        Tags
+                      </Label>
+                      <div className="flex flex-wrap gap-1">
+                        {entry.tags.length > 0 ? (
+                          entry.tags.map((tag) => (
+                            <Badge key={tag} variant="outline" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No tags</span>
+                        )}
                       </div>
                     </div>
 
                     {entry.source && (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 rounded-md border border-border/60 p-3 sm:col-span-2">
                         <Label className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Link2 className="size-3" />
                           Source
                         </Label>
-                        <code className="block px-3 py-2 bg-muted rounded text-xs font-mono">
+                        <code className="block bg-muted rounded px-2.5 py-2 text-xs font-mono break-all">
                           {entry.source}
                         </code>
                       </div>
                     )}
 
                     {entry.metadata && Object.keys(entry.metadata).length > 0 && (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 rounded-md border border-border/60 p-3 sm:col-span-2">
                         <Label className="text-xs text-muted-foreground">Metadata</Label>
-                        <pre className="px-3 py-2 bg-muted rounded text-xs font-mono overflow-x-auto">
+                        <pre className="bg-muted rounded px-2.5 py-2 text-xs font-mono overflow-x-auto">
                           {JSON.stringify(entry.metadata, null, 2)}
                         </pre>
                       </div>
                     )}
                   </div>
-                </div>
-              </ScrollArea>
-            </TabsContent>
-          </Tabs>
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
+          </div>
         </SheetContent>
       </Sheet>
 

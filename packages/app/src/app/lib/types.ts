@@ -37,6 +37,7 @@ export interface ApiKey {
   name: string;
   prefix: string;
   createdAt: Date;
+  lastUsedAt?: Date;
 }
 
 export interface UsageResponse {
@@ -75,10 +76,32 @@ export interface ApiSearchResult extends ApiEntry {
 
 export interface ApiKeyListItem {
   id: string;
-  user_id: string;
   key_prefix: string;
   name: string;
   created_at: string;
+  last_used?: string | null;
+}
+
+export interface ApiVaultStatusResponse {
+  entries: {
+    total: number;
+    by_kind: Record<string, number>;
+    by_category: Record<string, number>;
+  };
+  files: {
+    total: number;
+    directories: number;
+  };
+  database: {
+    size: string;
+    size_bytes: number;
+    stale_paths: number;
+    expired: number;
+  };
+  embeddings: Record<string, unknown>;
+  embed_model_available: boolean;
+  health: "ok" | "degraded";
+  errors: string[];
 }
 
 export interface ApiUsageResponse {
@@ -146,6 +169,7 @@ export function transformApiKey(raw: ApiKeyListItem): ApiKey {
     name: raw.name,
     prefix: raw.key_prefix,
     createdAt: new Date(raw.created_at),
+    lastUsedAt: raw.last_used ? new Date(raw.last_used) : undefined,
   };
 }
 

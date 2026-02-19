@@ -9,10 +9,10 @@ import { useEntries, useUsage, useApiKeys } from "../lib/hooks";
 import { useAuth } from "../lib/auth";
 import {
   getOnboardingSteps,
-  toggleOnboardingStep,
   isOnboardingDismissed,
   dismissOnboarding,
 } from "../lib/onboarding";
+import { formatMegabytes } from "../lib/format";
 import {
   FileText,
   HardDrive,
@@ -25,9 +25,7 @@ import {
   Copy,
   Check,
   ExternalLink,
-  Loader2,
 } from "lucide-react";
-import type { OnboardingStep } from "../lib/types";
 import { toast } from "sonner";
 
 function formatRelativeTime(date: Date): string {
@@ -43,30 +41,26 @@ function formatRelativeTime(date: Date): string {
 }
 
 export function Dashboard() {
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { data: entriesData, isLoading: entriesLoading } = useEntries({ limit: 10 });
   const { data: usage, isLoading: usageLoading } = useUsage();
   const { data: apiKeys } = useApiKeys();
 
   const entriesUsed = usage?.entries.used ?? 0;
-  const [steps, setSteps] = useState<OnboardingStep[]>(() =>
-    getOnboardingSteps(isAuthenticated, entriesUsed)
-  );
+  const isLocalMode = user?.id === "local";
+  const hasApiKey = (apiKeys?.length ?? 0) > 0;
+  const hasMcpActivity = (apiKeys ?? []).some((key) => Boolean(key.lastUsedAt));
+  const steps = getOnboardingSteps({
+    isAuthenticated,
+    isLocalMode,
+    entriesUsed,
+    hasApiKey,
+    hasMcpActivity,
+  });
   const [showChecklist, setShowChecklist] = useState(() => !isOnboardingDismissed());
   const [copiedConfig, setCopiedConfig] = useState(false);
 
-  // Re-derive steps when usage loads
-  const derivedSteps = getOnboardingSteps(isAuthenticated, entriesUsed);
-  if (derivedSteps.some((s, i) => s.completed !== steps[i]?.completed)) {
-    setSteps(derivedSteps);
-  }
-
   const allComplete = steps.every((s) => s.completed);
-
-  const toggleStep = (id: string) => {
-    const updated = toggleOnboardingStep(id);
-    setSteps(updated);
-  };
 
   const handleDismiss = () => {
     dismissOnboarding();
@@ -105,8 +99,8 @@ export function Dashboard() {
           icon: HardDrive,
           used: usage.storage.usedMb,
           limit: usage.storage.limitMb,
-          display: `${usage.storage.usedMb} MB`,
-          sub: isUnlimited(usage.storage.limitMb) ? null : `of ${usage.storage.limitMb} MB`,
+          display: `${formatMegabytes(usage.storage.usedMb)} MB`,
+          sub: isUnlimited(usage.storage.limitMb) ? null : `of ${formatMegabytes(usage.storage.limitMb)} MB`,
         },
         {
           label: "Requests Today",
@@ -162,7 +156,7 @@ export function Dashboard() {
               <div key={step.id} className="flex items-start gap-3">
                 <Checkbox
                   checked={step.completed}
-                  onCheckedChange={() => toggleStep(step.id)}
+                  disabled
                   className="mt-0.5"
                 />
                 <div className="flex-1">

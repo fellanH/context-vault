@@ -11,6 +11,8 @@
     "packages/extension"
   ],
   "scripts": {
+    "cli": "node packages/local/bin/cli.js",
+    "ui": "npm run build --workspace=packages/app && npm run cli -- ui",
     "test": "vitest run",
     "test:watch": "vitest",
     "release": "npm publish --workspace packages/local",

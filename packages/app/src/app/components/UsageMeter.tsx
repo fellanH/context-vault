@@ -7,12 +7,14 @@ interface UsageMeterProps {
   label?: string;
   unit?: string;
   className?: string;
+  formatValue?: (value: number) => string;
 }
 
-export function UsageMeter({ used, limit, label, unit, className }: UsageMeterProps) {
+export function UsageMeter({ used, limit, label, unit, className, formatValue }: UsageMeterProps) {
   const pct = limit > 0 ? (used / limit) * 100 : 0;
   const isWarning = pct >= 80;
   const isCritical = pct >= 100;
+  const format = formatValue ?? ((value: number) => String(value));
 
   return (
     <div className={cn("space-y-1.5", className)}>
@@ -24,7 +26,7 @@ export function UsageMeter({ used, limit, label, unit, className }: UsageMeterPr
             isCritical && "text-red-500",
             isWarning && !isCritical && "text-amber-500",
           )}>
-            {used}{unit ? ` ${unit}` : ""} / {limit}{unit ? ` ${unit}` : ""}
+            {format(used)}{unit ? ` ${unit}` : ""} / {format(limit)}{unit ? ` ${unit}` : ""}
           </span>
         </div>
       )}

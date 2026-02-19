@@ -1,4 +1,4 @@
-# context-mcp
+# context-vault
 
 [![npm version](https://img.shields.io/npm/v/context-vault)](https://www.npmjs.com/package/context-vault)
 [![npm downloads](https://img.shields.io/npm/dm/context-vault)](https://www.npmjs.com/package/context-vault)
@@ -8,7 +8,7 @@
 Persistent memory for AI agents — saves and searches knowledge across sessions.
 
 <p align="center">
-  <img src="demo.gif" alt="context-vault demo — Claude Code and Cursor using the knowledge vault" width="800">
+  <img src="https://github.com/fellanH/context-mcp/raw/main/demo.gif" alt="context-vault demo — Claude Code and Cursor using the knowledge vault" width="800">
 </p>
 
 ## Quick Start
@@ -22,7 +22,7 @@ Setup auto-detects your tools (Claude Code, Claude Desktop, Cursor, Windsurf, Cl
 
 > "Search my vault for getting started"
 
-For hosted MCP setup (Claude Code, Cursor, GPT Actions), see [`docs/distribution/connect-in-2-minutes.md`](./docs/distribution/connect-in-2-minutes.md).
+For hosted MCP setup (Claude Code, Cursor, GPT Actions), see [connect-in-2-minutes](https://github.com/fellanH/context-mcp/blob/main/docs/distribution/connect-in-2-minutes.md).
 
 ## What It Does
 
@@ -120,7 +120,7 @@ Shows vault path, database size, file counts per kind, embedding coverage, and a
 | `context-mcp status` | Show vault health, paths, and entry counts |
 | `context-mcp reindex` | Rebuild search index from vault files |
 | `context-mcp update` | Check for and install updates |
-| `context-mcp ui` | Launch web dashboard (uses `packages/app`) |
+| `context-mcp ui` | Launch web dashboard |
 
 ### AI Tool Examples
 
@@ -173,7 +173,7 @@ AI:  [Returns recent session entries]
 
 ### Folders and Kinds
 
-Entries are organized into three categories — **knowledge** (enduring insights, decisions, patterns), **entity** (contacts, projects, tools), and **event** (sessions, conversations, logs). See [DATA_CATEGORIES.md](./DATA_CATEGORIES.md) for the full category system, kind mappings, and write semantics.
+Entries are organized into three categories — **knowledge** (enduring insights, decisions, patterns), **entity** (contacts, projects, tools), and **event** (sessions, conversations, logs). See [DATA_CATEGORIES](https://github.com/fellanH/context-mcp/blob/main/docs/DATA_CATEGORIES.md) for the full category system, kind mappings, and write semantics.
 
 Each top-level subdirectory in the vault maps to a `kind` value. The directory name is depluralized:
 
@@ -278,11 +278,11 @@ context-mcp <command> [options]
 |---------|-------------|
 | `setup` | Interactive MCP installer — detects tools, writes configs |
 | `serve` | Start the MCP server (used by AI clients in MCP configs) |
-| `ui [--port 3141]` | Launch the web dashboard (serves `packages/app`) |
+| `ui [--port 3141]` | Launch the web dashboard |
 | `reindex` | Rebuild search index from knowledge files |
 | `status` | Show vault diagnostics (paths, counts, health) |
 
-If running from source without a global install, use `npx context-mcp` or `npm run cli --` instead of `context-mcp`.
+If running from source without a global install, use `npx context-mcp` or `node packages/local/bin/cli.js` instead of `context-mcp`.
 
 ## Install
 
@@ -294,26 +294,6 @@ context-mcp setup
 ```
 
 The `setup` command auto-detects installed tools (Claude Code, Claude Desktop, Cursor, Windsurf, Cline), lets you pick which to configure, and writes the correct MCP config for each. Existing configs are preserved — only the `context-mcp` entry is added or updated.
-
-### Local Development
-
-```bash
-git clone https://github.com/fellanH/context-mcp.git
-cd context-mcp
-nvm use
-npm install
-
-# Interactive setup — detects your tools and configures them
-npm run cli -- setup
-```
-
-The repository pins Node.js `20` in `.nvmrc` for consistent local and CI builds.
-
-For non-interactive environments (CI, scripts):
-
-```bash
-context-mcp setup --yes
-```
 
 ### Manual Configuration
 
@@ -327,19 +307,6 @@ If you prefer manual setup, add to your tool's MCP config. Pass `--vault-dir` to
     "context-mcp": {
       "command": "context-mcp",
       "args": ["serve", "--vault-dir", "/path/to/vault"]
-    }
-  }
-}
-```
-
-**Local dev clone** (absolute path to source):
-
-```json
-{
-  "mcpServers": {
-    "context-mcp": {
-      "command": "node",
-      "args": ["/path/to/context-mcp/packages/local/src/server/index.js", "--vault-dir", "/path/to/vault"]
     }
   }
 }
@@ -373,7 +340,7 @@ This means:
 
 ## Web Dashboard
 
-The web dashboard is built with React and Vite in `packages/app`. It provides a full UI for browsing, searching, and managing your vault entries. The `context-mcp ui` command serves the built app from `packages/app/dist`.
+The `context-mcp ui` command launches a web dashboard for browsing, searching, and managing your vault entries.
 
 ## How It Works
 
@@ -398,39 +365,6 @@ You own these files                  Rebuilt from files anytime
 The SQLite database is stored at `~/.context-mcp/vault.db` by default (configurable via `--db-path`, `CONTEXT_MCP_DB_PATH`, or `config.json`). It contains FTS5 full-text indexes and sqlite-vec embeddings (384-dim float32, all-MiniLM-L6-v2). The database is a derived index — delete it and the server rebuilds it automatically on next session.
 
 Requires **Node.js 20** or later.
-
-### Architecture
-
-```
-src/
-├── core/                Shared utilities (config, frontmatter, files, status)
-├── capture/             Write path — creates .md files in the vault
-├── index/               Sync layer — SQLite schema, embeddings, reindex
-├── retrieve/            Read path — hybrid FTS5 + vector search
-└── server/              MCP server — wires layers into tool handlers
-
-bin/
-└── cli.js               CLI entry point (setup, serve, ui, reindex, status)
-
-packages/app/
-├── src/                 React app source (Vite + React Router)
-├── dist/                Built static assets (served by `ui` command)
-└── vite.config.ts       Vite configuration
-```
-
-Each layer has a single responsibility and can be understood independently. The server is the only module that imports across layer boundaries.
-
-### Module Dependency Graph
-
-```
-core/files.js, core/frontmatter.js  ←  capture/
-                                              ↑
-core/config.js                          server/  ←  packages/local/bin/cli.js
-                                              ↑
-index/embed.js  ←  retrieve/        ←   packages/app/ (web dashboard)
-                                              ↑
-index/db.js     ←──────────────────  (all consumers)
-```
 
 ## Troubleshooting
 

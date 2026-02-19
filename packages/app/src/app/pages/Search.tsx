@@ -8,8 +8,9 @@ import { Skeleton } from "../components/ui/skeleton";
 import { Switch } from "../components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Search as SearchIcon, ChevronDown, ChevronUp } from "lucide-react";
+import { EntryInspector } from "../components/EntryInspector";
 import { useSearch } from "../lib/hooks";
-import type { Category } from "../lib/types";
+import type { SearchResult } from "../lib/types";
 
 const exampleQueries = [
   "error handling patterns",
@@ -26,6 +27,7 @@ export function Search() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [hybridMode, setHybridMode] = useState(true);
   const [resultLimit, setResultLimit] = useState(10);
+  const [selectedEntry, setSelectedEntry] = useState<SearchResult | null>(null);
 
   const searchMutation = useSearch();
 
@@ -44,6 +46,7 @@ export function Search() {
   };
 
   const results = searchMutation.data?.results ?? [];
+  const openResult = (result: SearchResult) => setSelectedEntry(result);
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -143,7 +146,20 @@ export function Search() {
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">{results.length} results</p>
           {results.map((result) => (
-            <Card key={result.id} className="hover:bg-accent/50 transition-colors cursor-pointer">
+            <Card
+              key={result.id}
+              className="hover:bg-accent/50 transition-colors cursor-pointer"
+              role="button"
+              tabIndex={0}
+              onClick={() => openResult(result)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openResult(result);
+                }
+              }}
+              aria-label={`Open ${result.title}`}
+            >
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
@@ -193,6 +209,12 @@ export function Search() {
           </div>
         </div>
       )}
+
+      <EntryInspector
+        entry={selectedEntry}
+        open={selectedEntry !== null}
+        onOpenChange={(open) => !open && setSelectedEntry(null)}
+      />
     </div>
   );
 }

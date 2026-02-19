@@ -20,7 +20,7 @@ import { Button } from "./ui/button";
 import { UsageMeter } from "./UsageMeter";
 import { TierBadge } from "./TierBadge";
 import { useAuth } from "../lib/auth";
-import { useUsage } from "../lib/hooks";
+import { useUsage, useVaultStatus } from "../lib/hooks";
 import { useState, useEffect, useRef } from "react";
 import { QuickSearch } from "./QuickSearch";
 
@@ -62,6 +62,7 @@ export function RootLayout() {
   const { theme, setTheme } = useTheme();
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const { data: usage, isLoading: usageLoading } = useUsage();
+  const vaultStatus = useVaultStatus({ enabled: isAuthenticated, refetchInterval: 15000 });
   const [avatarOpen, setAvatarOpen] = useState(false);
   const avatarRef = useRef<HTMLDivElement>(null);
 
@@ -102,6 +103,18 @@ export function RootLayout() {
   const initials = user?.name
     ? user.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
     : user?.email?.[0]?.toUpperCase() || "?";
+  const isLocalMode = user?.id === "local";
+  const modeLabel = isLocalMode ? "Local" : "Hosted";
+  const connectionState = vaultStatus.isError
+    ? "Disconnected"
+    : vaultStatus.data?.health === "degraded"
+      ? "Degraded"
+      : "Connected";
+  const connectionBadgeClass = connectionState === "Connected"
+    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+    : connectionState === "Degraded"
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+      : "border-border bg-muted text-muted-foreground";
 
   const isUnlimited = (limit: number) => !isFinite(limit);
 
@@ -164,7 +177,12 @@ export function RootLayout() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
         <header className="h-14 border-b border-border bg-card px-6 flex items-center justify-between">
-          <h2 className="text-sm font-medium">{getPageTitle(location.pathname)}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-medium">{getPageTitle(location.pathname)}</h2>
+            <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${connectionBadgeClass}`}>
+              {modeLabel} • {connectionState}
+            </span>
+          </div>
 
           <div className="flex items-center gap-2">
             <Link to="/search">

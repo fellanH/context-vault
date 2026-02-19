@@ -1,4 +1,4 @@
-app = "context-vault-staging"
+app = "context-vault"
 primary_region = "fra"
 
 [build]
@@ -12,7 +12,7 @@ primary_region = "fra"
   NODE_ENV = "staging"
 
 [[mounts]]
-  source = "context_vault_staging_data"
+  source = "context_vault_data"
   destination = "/data"
 
 [http_service]
