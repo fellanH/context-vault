@@ -475,6 +475,53 @@ export function registerTools(server, ctx) {
     })
   );
 
+  // ─── ingest_url (fetch URL and save) ────────────────────────────────────────
+
+  server.tool(
+    "ingest_url",
+    "Fetch a URL, extract its readable content, and save it as a vault entry. Useful for saving articles, documentation, or web pages to your knowledge vault.",
+    {
+      url: z.string().describe("The URL to fetch and save"),
+      kind: z.string().optional().describe("Entry kind (default: reference)"),
+      tags: z.array(z.string()).optional().describe("Tags for the entry"),
+    },
+    tracked(async ({ url: targetUrl, kind, tags }) => {
+      const vaultErr = ensureVaultExists(config);
+      if (vaultErr) return vaultErr;
+
+      if (!targetUrl?.trim()) return err("Required: url (non-empty string)", "INVALID_INPUT");
+
+      await ensureIndexed();
+
+      // Hosted tier limit enforcement
+      if (ctx.checkLimits) {
+        const usage = ctx.checkLimits();
+        if (usage.entryCount >= usage.maxEntries) {
+          return err(`Entry limit reached (${usage.maxEntries}). Upgrade to Pro for unlimited entries.`, "LIMIT_EXCEEDED");
+        }
+      }
+
+      try {
+        const { ingestUrl } = await import("../capture/ingest-url.js");
+        const entryData = await ingestUrl(targetUrl, { kind, tags });
+        const entry = await captureAndIndex(ctx, { ...entryData, userId }, indexEntry);
+        const relPath = entry.filePath ? entry.filePath.replace(config.vaultDir + "/", "") : entry.filePath;
+        const parts = [
+          `✓ Ingested URL → ${relPath}`,
+          `  id: ${entry.id}`,
+          `  title: ${entry.title || "(untitled)"}`,
+          `  source: ${entry.source || targetUrl}`,
+        ];
+        if (entry.tags?.length) parts.push(`  tags: ${entry.tags.join(", ")}`);
+        parts.push(`  body: ${entry.body?.length || 0} chars`);
+        parts.push("", "_Use this id to update or delete later._");
+        return ok(parts.join("\n"));
+      } catch (e) {
+        return err(`Failed to ingest URL: ${e.message}`, "INGEST_FAILED");
+      }
+    })
+  );
+
   // ─── context_status (diagnostics) ──────────────────────────────────────────
 
   server.tool(

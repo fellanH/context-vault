@@ -34,7 +34,7 @@ For hosted MCP setup (Claude Code, Cursor, GPT Actions), see [`docs/distribution
 
 ## Tools
 
-The server exposes six tools. Your AI agent calls them automatically — you don't invoke them directly.
+The server exposes seven tools. Your AI agent calls them automatically — you don't invoke them directly.
 
 | Tool | Type | Description |
 |------|------|-------------|
@@ -42,6 +42,7 @@ The server exposes six tools. Your AI agent calls them automatically — you don
 | `save_context` | Write | Save new knowledge or update existing entries by ID |
 | `list_context` | Browse | List vault entries with filtering and pagination |
 | `delete_context` | Delete | Remove an entry by ID (file + index) |
+| `ingest_url` | Write | Fetch a URL, extract content, save as vault entry |
 | `submit_feedback` | Write | Submit bug reports or feature requests |
 | `context_status` | Diag | Show resolved config, health, and per-kind file counts |
 
@@ -125,6 +126,11 @@ Shows vault path, database size, file counts per kind, embedding coverage, and a
 | `context-vault ui [--port 3141]` | Launch web dashboard |
 | `context-vault status` | Show vault health, paths, and entry counts |
 | `context-vault reindex` | Rebuild search index from vault files |
+| `context-vault import <path>` | Import entries from file or directory (.md, .csv, .json, .txt) |
+| `context-vault export` | Export vault to JSON or CSV (`--format`, `--output`) |
+| `context-vault ingest <url>` | Fetch URL, extract content, save as entry |
+| `context-vault link --key cv_...` | Link local vault to hosted account |
+| `context-vault sync` | Sync entries between local and hosted |
 | `context-vault update` | Check for and install updates |
 | `context-vault uninstall` | Remove MCP configs and optionally data |
 | `context-vault migrate` | Migrate vault between local and hosted |

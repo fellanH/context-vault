@@ -7,7 +7,7 @@
  */
 
 import { createServer } from "node:http";
-import { createReadStream, existsSync, statSync, unlinkSync } from "node:fs";
+import { createReadStream, existsSync, statSync, unlinkSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir, platform } from "node:os";
@@ -21,6 +21,10 @@ import { hybridSearch } from "@context-vault/core/retrieve";
 import { gatherVaultStatus } from "@context-vault/core/core/status";
 import { normalizeKind } from "@context-vault/core/core/files";
 import { categoryFor } from "@context-vault/core/core/categories";
+import { parseFile } from "@context-vault/core/capture/importers";
+import { importEntries } from "@context-vault/core/capture/import-pipeline";
+import { ingestUrl } from "@context-vault/core/capture/ingest-url";
+import { buildLocalManifest, fetchRemoteManifest, computeSyncPlan, executeSync } from "@context-vault/core/sync";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOCAL_ROOT = resolve(__dirname, "..");
@@ -91,8 +95,24 @@ async function main() {
   const server = createServer(async (req, res) => {
     const url = req.url?.replace(/\?.*$/, "") || "/";
 
+    // ─── CORS Preflight ───────────────────────────────────────────────────────
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      });
+      res.end();
+      return;
+    }
+
     const json = (data, status = 200) => {
-      res.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+      res.writeHead(status, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      });
       res.end(JSON.stringify(data));
     };
 
@@ -338,6 +358,183 @@ async function main() {
       } catch (e) {
         console.error(`[local-server] Search error: ${e.message}`);
         return json({ error: "Search failed", code: "SEARCH_FAILED" }, 500);
+      }
+    }
+
+    // ─── API: POST /api/vault/import/bulk — Bulk import entries ─────────────
+    if (url === "/api/vault/import/bulk" && req.method === "POST") {
+      const data = await readBody();
+      if (!data || !Array.isArray(data.entries)) {
+        return json({ error: "Invalid body — expected { entries: [...] }", code: "INVALID_INPUT" }, 400);
+      }
+      if (data.entries.length > 500) {
+        return json({ error: "Maximum 500 entries per request", code: "LIMIT_EXCEEDED" }, 400);
+      }
+
+      const result = await importEntries(ctx, data.entries, { source: "bulk-import" });
+      return json({ imported: result.imported, failed: result.failed, errors: result.errors.slice(0, 10).map((e) => e.error) });
+    }
+
+    // ─── API: POST /api/vault/import/file — Import from file content ────────
+    if (url === "/api/vault/import/file" && req.method === "POST") {
+      const data = await readBody();
+      if (!data?.filename || !data?.content) {
+        return json({ error: "filename and content are required", code: "INVALID_INPUT" }, 400);
+      }
+
+      const entries = parseFile(data.filename, data.content, { kind: data.kind, source: data.source || "file-import" });
+      if (!entries.length) return json({ imported: 0, failed: 0, errors: ["No entries parsed from file"] });
+
+      const result = await importEntries(ctx, entries, { source: data.source || "file-import" });
+      return json({ imported: result.imported, failed: result.failed, errors: result.errors.slice(0, 10).map((e) => e.error) });
+    }
+
+    // ─── API: GET /api/vault/export — Export all entries ─────────────────────
+    if (url.startsWith("/api/vault/export") && req.method === "GET") {
+      const u = new URL(req.url || "", "http://localhost");
+      const format = u.searchParams.get("format") || "json";
+
+      const rows = ctx.db.prepare(
+        "SELECT * FROM vault WHERE (expires_at IS NULL OR expires_at > datetime('now')) ORDER BY created_at DESC"
+      ).all();
+
+      const entries = rows.map(formatEntry);
+
+      if (format === "csv") {
+        const headers = ["id", "kind", "category", "title", "body", "tags", "source", "identity_key", "expires_at", "created_at"];
+        const csvLines = [headers.join(",")];
+        for (const e of entries) {
+          const row = headers.map((h) => {
+            let val = e[h];
+            if (Array.isArray(val)) val = val.join(", ");
+            if (val == null) val = "";
+            val = String(val);
+            if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+              val = '"' + val.replace(/"/g, '""') + '"';
+            }
+            return val;
+          });
+          csvLines.push(row.join(","));
+        }
+        res.writeHead(200, { "Content-Type": "text/csv", "Access-Control-Allow-Origin": "*" });
+        res.end(csvLines.join("\n"));
+        return;
+      }
+
+      return json({ entries, total: entries.length, exported_at: new Date().toISOString() });
+    }
+
+    // ─── API: POST /api/vault/ingest — Fetch URL and save as entry ──────────
+    if (url === "/api/vault/ingest" && req.method === "POST") {
+      const data = await readBody();
+      if (!data?.url) return json({ error: "url is required", code: "INVALID_INPUT" }, 400);
+
+      try {
+        const entry = await ingestUrl(data.url, { kind: data.kind, tags: data.tags });
+        const result = await captureAndIndex(ctx, entry, indexEntry);
+        return json(formatEntry(ctx.stmts.getEntryById.get(result.id)), 201);
+      } catch (e) {
+        return json({ error: `Ingestion failed: ${e.message}`, code: "INGEST_FAILED" }, 500);
+      }
+    }
+
+    // ─── API: GET /api/vault/manifest — Lightweight entry list for sync ─────
+    if (url === "/api/vault/manifest" && req.method === "GET") {
+      const rows = ctx.db.prepare(
+        "SELECT id, kind, title, created_at FROM vault WHERE (expires_at IS NULL OR expires_at > datetime('now')) ORDER BY created_at DESC"
+      ).all();
+      return json({ entries: rows.map((r) => ({ id: r.id, kind: r.kind, title: r.title || null, created_at: r.created_at })) });
+    }
+
+    // ─── API: GET /api/local/link — Get link status ─────────────────────────
+    if (url === "/api/local/link" && req.method === "GET") {
+      const dataDir = join(homedir(), ".context-mcp");
+      const configPath = join(dataDir, "config.json");
+      let storedConfig = {};
+      if (existsSync(configPath)) {
+        try { storedConfig = JSON.parse(readFileSync(configPath, "utf-8")); } catch {}
+      }
+      return json({
+        linked: !!storedConfig.apiKey,
+        email: storedConfig.email || null,
+        hostedUrl: storedConfig.hostedUrl || null,
+        linkedAt: storedConfig.linkedAt || null,
+        tier: storedConfig.tier || null,
+      });
+    }
+
+    // ─── API: POST /api/local/link — Link/unlink hosted account ─────────────
+    if (url === "/api/local/link" && req.method === "POST") {
+      const data = await readBody();
+      const dataDir = join(homedir(), ".context-mcp");
+      const configPath = join(dataDir, "config.json");
+
+      let storedConfig = {};
+      if (existsSync(configPath)) {
+        try { storedConfig = JSON.parse(readFileSync(configPath, "utf-8")); } catch {}
+      }
+
+      if (!data?.apiKey) {
+        // Unlink
+        delete storedConfig.apiKey;
+        delete storedConfig.hostedUrl;
+        delete storedConfig.userId;
+        delete storedConfig.email;
+        delete storedConfig.linkedAt;
+        delete storedConfig.tier;
+        writeFileSync(configPath, JSON.stringify(storedConfig, null, 2) + "\n");
+        return json({ linked: false });
+      }
+
+      const hostedUrl = data.hostedUrl || "https://www.context-vault.com";
+      try {
+        const response = await fetch(`${hostedUrl}/api/me`, {
+          headers: { Authorization: `Bearer ${data.apiKey}` },
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const user = await response.json();
+
+        storedConfig.apiKey = data.apiKey;
+        storedConfig.hostedUrl = hostedUrl;
+        storedConfig.userId = user.userId || user.id;
+        storedConfig.email = user.email;
+        storedConfig.tier = user.tier || "free";
+        storedConfig.linkedAt = new Date().toISOString();
+
+        mkdirSync(dataDir, { recursive: true });
+        writeFileSync(configPath, JSON.stringify(storedConfig, null, 2) + "\n");
+
+        return json({ linked: true, email: user.email, tier: user.tier || "free" });
+      } catch (e) {
+        return json({ error: `Verification failed: ${e.message}`, code: "AUTH_FAILED" }, 401);
+      }
+    }
+
+    // ─── API: POST /api/local/sync — Bidirectional sync ─────────────────────
+    if (url === "/api/local/sync" && req.method === "POST") {
+      const dataDir = join(homedir(), ".context-mcp");
+      const configPath = join(dataDir, "config.json");
+      let storedConfig = {};
+      if (existsSync(configPath)) {
+        try { storedConfig = JSON.parse(readFileSync(configPath, "utf-8")); } catch {}
+      }
+
+      if (!storedConfig.apiKey) {
+        return json({ error: "Not linked. Use link endpoint first.", code: "NOT_LINKED" }, 400);
+      }
+
+      try {
+        const local = buildLocalManifest(ctx);
+        const remote = await fetchRemoteManifest(storedConfig.hostedUrl, storedConfig.apiKey);
+        const plan = computeSyncPlan(local, remote);
+        const result = await executeSync(ctx, {
+          hostedUrl: storedConfig.hostedUrl,
+          apiKey: storedConfig.apiKey,
+          plan,
+        });
+        return json(result);
+      } catch (e) {
+        return json({ error: `Sync failed: ${e.message}`, code: "SYNC_FAILED" }, 500);
       }
     }
 

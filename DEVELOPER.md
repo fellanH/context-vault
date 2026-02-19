@@ -78,7 +78,8 @@ INPUT ──▶│  Capture   │──▶ .md file  │   Retrieve   │──�
 | Capture | `src/capture/` | Write `.md` files to vault dir. No SQL. |
 | Index | `src/index/` | SQLite + FTS5 + vector embeddings. Derived from files. |
 | Retrieve | `src/retrieve/` | Read-only hybrid search (FTS + semantic). |
-| Tools | `src/server/tools.js` | 6 MCP tool handlers that coordinate the layers. |
+| Tools | `src/server/tools.js` | 7 MCP tool handlers that coordinate the layers. |
+| Sync | `src/sync/` | Bidirectional sync protocol (manifest, diff, push/pull). |
 | Shared | `src/core/` | Config resolution, categories, frontmatter, file utilities. |
 
 **Key rule**: Vault `.md` files are the **source of truth**. The SQLite database is a derived index that can be fully rebuilt via `reindex()`. Never write directly to the DB and expect it to persist independently.
@@ -91,6 +92,10 @@ import { createEmbedder }             from '@context-vault/core/index/embed'
 import { hybridSearch }               from '@context-vault/core/retrieve'
 import { registerTools }              from '@context-vault/core/server/tools'
 import { resolveConfig }              from '@context-vault/core/core/config'
+import { parseFile, parseDirectory }  from '@context-vault/core/capture/importers'
+import { importEntries }              from '@context-vault/core/capture/import-pipeline'
+import { ingestUrl }                  from '@context-vault/core/capture/ingest-url'
+import { buildLocalManifest, computeSyncPlan, executeSync } from '@context-vault/core/sync'
 ```
 
 ### `packages/local` — `context-vault` (npm)
@@ -114,7 +119,7 @@ Cloud deployment on Fly.io. Wraps core with HTTP transport, auth, encryption, an
 | Auth | `src/auth/` | Google OAuth + API key validation |
 | Encryption | `src/encryption/` | AES-256-GCM per-user, key derivation via PBKDF2 |
 | Billing | `src/billing/stripe.js` | Stripe checkout, webhooks, tier enforcement |
-| REST API | `src/routes/vault-api.js` | 7 endpoints under `/api/vault/` |
+| REST API | `src/routes/vault-api.js` | 10 endpoints under `/api/vault/` (CRUD, search, status, bulk import, export, ingest, manifest) |
 | Middleware | `src/middleware/` | Auth, rate limiting, logging |
 | Backups | `src/backup/r2-backup.js` | Cloudflare R2 automated backups |
 | Context | `src/server/ctx.js`, `user-ctx.js` | Shared + per-user context builders |
@@ -176,7 +181,7 @@ This is the most important distinction in the codebase.
 | Consumers | Claude Code, Cursor, Windsurf, Cline | Extension, web app, remote MCP clients |
 | Published | npm (`context-vault`) | Fly.io (`context-vault` app) |
 
-Both consume `@context-vault/core` and register the same 6 tools. The hosted server adds a per-request `userCtx` wrapper with encryption and tier limits.
+Both consume `@context-vault/core` and register the same 7 tools (6 original + `ingest_url`). The hosted server adds a per-request `userCtx` wrapper with encryption and tier limits.
 
 ---
 
@@ -284,6 +289,15 @@ Both `CONTEXT_VAULT_*` and `CONTEXT_MCP_*` env var prefixes are supported. `CONT
 | Event decay | 30 days | `CONTEXT_MCP_EVENT_DECAY_DAYS` | `--event-decay-days` |
 
 Config file location: `~/.context-mcp/config.json`
+
+### Account Linking (config.json)
+
+When linked to a hosted account, the config file also stores:
+- `hostedUrl` — Server URL (default: `https://www.context-vault.com`)
+- `apiKey` — Bearer token (`cv_...`)
+- `userId`, `email`, `linkedAt` — Account metadata
+
+Env overrides: `CONTEXT_VAULT_API_KEY`, `CONTEXT_VAULT_HOSTED_URL`
 
 ---
 
@@ -460,7 +474,7 @@ npm run test:watch  # Watch mode
 ```
 
 Test files live in `/test/`:
-- `test/unit/` — Frontmatter, files, categories, encryption, billing, formatting
+- `test/unit/` — Frontmatter, files, categories, encryption, billing, formatting, importers, URL ingestion
 - `test/integration/` — Round-trip save/search, list, feedback, hosted auth
 - `test/helpers/ctx.js` — Shared test context builder
 

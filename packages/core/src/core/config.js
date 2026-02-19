@@ -49,6 +49,12 @@ export function resolveConfig() {
       if (fc.dbPath) config.dbPath = fc.dbPath;
       if (fc.devDir) config.devDir = fc.devDir;
       if (fc.eventDecayDays) config.eventDecayDays = fc.eventDecayDays;
+      // Hosted account linking (Phase 4)
+      if (fc.hostedUrl) config.hostedUrl = fc.hostedUrl;
+      if (fc.apiKey) config.apiKey = fc.apiKey;
+      if (fc.userId) config.userId = fc.userId;
+      if (fc.email) config.email = fc.email;
+      if (fc.linkedAt) config.linkedAt = fc.linkedAt;
       config.resolvedFrom = "config file";
     } catch (e) {
       throw new Error(`[context-vault] Invalid config at ${configPath}: ${e.message}`);
@@ -61,6 +67,10 @@ export function resolveConfig() {
   if (process.env.CONTEXT_VAULT_DB_PATH || process.env.CONTEXT_MCP_DB_PATH) { config.dbPath = process.env.CONTEXT_VAULT_DB_PATH || process.env.CONTEXT_MCP_DB_PATH; config.resolvedFrom = "env"; }
   if (process.env.CONTEXT_VAULT_DEV_DIR || process.env.CONTEXT_MCP_DEV_DIR) { config.devDir = process.env.CONTEXT_VAULT_DEV_DIR || process.env.CONTEXT_MCP_DEV_DIR; config.resolvedFrom = "env"; }
   if (process.env.CONTEXT_VAULT_EVENT_DECAY_DAYS || process.env.CONTEXT_MCP_EVENT_DECAY_DAYS) { config.eventDecayDays = Number(process.env.CONTEXT_VAULT_EVENT_DECAY_DAYS || process.env.CONTEXT_MCP_EVENT_DECAY_DAYS); config.resolvedFrom = "env"; }
+
+  // 3b. Hosted account env overrides
+  if (process.env.CONTEXT_VAULT_API_KEY) { config.apiKey = process.env.CONTEXT_VAULT_API_KEY; }
+  if (process.env.CONTEXT_VAULT_HOSTED_URL) { config.hostedUrl = process.env.CONTEXT_VAULT_HOSTED_URL; }
 
   // 4. CLI arg overrides (highest priority)
   if (cliArgs.vaultDir) { config.vaultDir = cliArgs.vaultDir; config.resolvedFrom = "CLI args"; }

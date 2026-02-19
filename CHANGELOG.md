@@ -2,6 +2,38 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.5.0] — 2026-02-19
+
+### Added
+- **Data import flexibility** — import entries from markdown, CSV/TSV, JSON, and plain text files or directories
+  - CLI: `context-vault import <path>` with `--kind`, `--source`, `--dry-run`
+  - REST: `POST /api/vault/import/bulk` and `POST /api/vault/import/file` on local server
+  - Auto-detects ChatGPT export format
+- **Export** — dump entire vault to JSON or CSV
+  - CLI: `context-vault export [--format json|csv] [--output file]`
+  - REST: `GET /api/vault/export` on both local and hosted servers
+- **URL ingestion** — fetch a web page, extract readable content as markdown, save as vault entry
+  - CLI: `context-vault ingest <url>` with `--kind`, `--tags`, `--dry-run`
+  - MCP tool: `ingest_url` available to all AI agents
+  - REST: `POST /api/vault/ingest` on both local and hosted servers
+- **Account linking** — connect local vault to a hosted Context Vault account
+  - CLI: `context-vault link --key cv_...`
+  - Config reads `hostedUrl`, `apiKey`, `userId`, `email`, `linkedAt` from config.json
+  - Env var overrides: `CONTEXT_VAULT_API_KEY`, `CONTEXT_VAULT_HOSTED_URL`
+- **Bidirectional sync** — additive-only sync between local and hosted vaults
+  - CLI: `context-vault sync` with `--dry-run`, `--push-only`, `--pull-only`
+  - REST: `POST /api/local/sync`, `GET/POST /api/local/link`
+  - Manifest-based diffing via `GET /api/vault/manifest`
+- **Sync settings page** in web dashboard (`/settings/sync`)
+- **CORS preflight** support on local server (OPTIONS handler + full CORS headers)
+- 42 new unit tests for importers and URL ingestion (107 total)
+
+### New core exports
+- `@context-vault/core/capture/importers` — Format detection + multi-format parsers
+- `@context-vault/core/capture/import-pipeline` — Batch import orchestrator
+- `@context-vault/core/capture/ingest-url` — URL fetch + HTML-to-markdown
+- `@context-vault/core/sync` — Bidirectional sync protocol
+
 ## [2.4.2] — 2026-02-19
 
 ### Added

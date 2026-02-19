@@ -196,6 +196,11 @@ ${bold("Commands:")}
   ${cyan("status")}                Show vault diagnostics
   ${cyan("update")}                Check for and install updates
   ${cyan("uninstall")}             Remove MCP configs and optionally data
+  ${cyan("import")} <path>          Import entries from file or directory
+  ${cyan("export")}                Export vault to JSON or CSV
+  ${cyan("ingest")} <url>          Fetch URL and save as vault entry
+  ${cyan("link")} --key cv_...     Link local vault to hosted account
+  ${cyan("sync")}                  Sync entries between local and hosted
   ${cyan("migrate")}               Migrate vault between local and hosted
 
 ${bold("Options:")}
@@ -1234,6 +1239,404 @@ async function runMigrate() {
   console.log();
 }
 
+// ─── Import Command ─────────────────────────────────────────────────────────
+
+async function runImport() {
+  const target = args[1];
+  if (!target) {
+    console.log(`\n  ${bold("context-vault import")} <path>\n`);
+    console.log(`  Import entries from a file or directory.\n`);
+    console.log(`  Supported formats: .md, .csv, .tsv, .json, .txt\n`);
+    console.log(`  Options:`);
+    console.log(`    --kind <kind>    Default kind (default: insight)`);
+    console.log(`    --source <src>   Default source (default: cli-import)`);
+    console.log(`    --dry-run        Show parsed entries without importing`);
+    console.log();
+    return;
+  }
+
+  const { resolveConfig } = await import("@context-vault/core/core/config");
+  const { initDatabase, prepareStatements, insertVec, deleteVec } = await import("@context-vault/core/index/db");
+  const { embed } = await import("@context-vault/core/index/embed");
+  const { parseFile, parseDirectory } = await import("@context-vault/core/capture/importers");
+  const { importEntries } = await import("@context-vault/core/capture/import-pipeline");
+  const { readFileSync, statSync } = await import("node:fs");
+
+  const kind = getFlag("--kind") || undefined;
+  const source = getFlag("--source") || "cli-import";
+  const dryRun = flags.has("--dry-run");
+
+  const targetPath = resolve(target);
+  if (!existsSync(targetPath)) {
+    console.error(red(`  Path not found: ${targetPath}`));
+    process.exit(1);
+  }
+
+  const stat = statSync(targetPath);
+  let entries;
+
+  if (stat.isDirectory()) {
+    entries = parseDirectory(targetPath, { kind, source });
+  } else {
+    const content = readFileSync(targetPath, "utf-8");
+    entries = parseFile(targetPath, content, { kind, source });
+  }
+
+  if (entries.length === 0) {
+    console.log(yellow("  No entries found to import."));
+    return;
+  }
+
+  console.log(`\n  Found ${bold(String(entries.length))} entries to import\n`);
+
+  if (dryRun) {
+    for (let i = 0; i < Math.min(entries.length, 20); i++) {
+      const e = entries[i];
+      console.log(`  ${dim(`[${i + 1}]`)} ${e.kind} — ${e.title || e.body.slice(0, 60)}${e.tags?.length ? ` ${dim(`[${e.tags.join(", ")}]`)}` : ""}`);
+    }
+    if (entries.length > 20) {
+      console.log(dim(`  ... and ${entries.length - 20} more`));
+    }
+    console.log(dim("\n  Dry run — no entries were imported."));
+    return;
+  }
+
+  const config = resolveConfig();
+  if (!config.vaultDirExists) {
+    console.error(red(`  Vault directory not found: ${config.vaultDir}`));
+    console.error(`  Run ${cyan("context-vault setup")} to configure.`);
+    process.exit(1);
+  }
+
+  const db = await initDatabase(config.dbPath);
+  const stmts = prepareStatements(db);
+  const ctx = {
+    db, config, stmts, embed,
+    insertVec: (r, e) => insertVec(stmts, r, e),
+    deleteVec: (r) => deleteVec(stmts, r),
+  };
+
+  const result = await importEntries(ctx, entries, {
+    source,
+    onProgress: (current, total) => {
+      process.stdout.write(`\r  Importing... ${current}/${total}`);
+    },
+  });
+
+  db.close();
+
+  console.log(`\r  ${green("✓")} Import complete                    `);
+  console.log(`    ${green("+")} ${result.imported} imported`);
+  if (result.failed > 0) {
+    console.log(`    ${red("x")} ${result.failed} failed`);
+    for (const err of result.errors.slice(0, 5)) {
+      console.log(`      ${dim(err.error)}`);
+    }
+  }
+  console.log();
+}
+
+// ─── Export Command ─────────────────────────────────────────────────────────
+
+async function runExport() {
+  const format = getFlag("--format") || "json";
+  const output = getFlag("--output");
+
+  const { resolveConfig } = await import("@context-vault/core/core/config");
+  const { initDatabase, prepareStatements } = await import("@context-vault/core/index/db");
+  const { writeFileSync } = await import("node:fs");
+
+  const config = resolveConfig();
+  if (!config.vaultDirExists) {
+    console.error(red(`  Vault directory not found: ${config.vaultDir}`));
+    process.exit(1);
+  }
+
+  const db = await initDatabase(config.dbPath);
+
+  const rows = db.prepare(
+    "SELECT * FROM vault WHERE (expires_at IS NULL OR expires_at > datetime('now')) ORDER BY created_at DESC"
+  ).all();
+
+  db.close();
+
+  const entries = rows.map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    category: row.category,
+    title: row.title || null,
+    body: row.body || null,
+    tags: row.tags ? JSON.parse(row.tags) : [],
+    meta: row.meta ? JSON.parse(row.meta) : {},
+    source: row.source || null,
+    identity_key: row.identity_key || null,
+    expires_at: row.expires_at || null,
+    created_at: row.created_at,
+  }));
+
+  let content;
+
+  if (format === "csv") {
+    const headers = ["id", "kind", "category", "title", "body", "tags", "source", "identity_key", "expires_at", "created_at"];
+    const csvLines = [headers.join(",")];
+    for (const e of entries) {
+      const row = headers.map((h) => {
+        let val = e[h];
+        if (Array.isArray(val)) val = val.join(", ");
+        if (val == null) val = "";
+        val = String(val);
+        if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+          val = '"' + val.replace(/"/g, '""') + '"';
+        }
+        return val;
+      });
+      csvLines.push(row.join(","));
+    }
+    content = csvLines.join("\n");
+  } else {
+    content = JSON.stringify({ entries, total: entries.length, exported_at: new Date().toISOString() }, null, 2);
+  }
+
+  if (output) {
+    writeFileSync(resolve(output), content);
+    console.log(green(`  ✓ Exported ${entries.length} entries to ${output}`));
+  } else {
+    process.stdout.write(content);
+  }
+}
+
+// ─── Ingest Command ─────────────────────────────────────────────────────────
+
+async function runIngest() {
+  const url = args[1];
+  if (!url) {
+    console.log(`\n  ${bold("context-vault ingest")} <url>\n`);
+    console.log(`  Fetch a URL and save as a vault entry.\n`);
+    console.log(`  Options:`);
+    console.log(`    --kind <kind>    Entry kind (default: reference)`);
+    console.log(`    --tags t1,t2     Comma-separated tags`);
+    console.log(`    --dry-run        Show extracted content without saving`);
+    console.log();
+    return;
+  }
+
+  const { ingestUrl } = await import("@context-vault/core/capture/ingest-url");
+  const kind = getFlag("--kind") || undefined;
+  const tagsStr = getFlag("--tags");
+  const tags = tagsStr ? tagsStr.split(",").map((t) => t.trim()) : undefined;
+  const dryRun = flags.has("--dry-run");
+
+  console.log(dim(`  Fetching ${url}...`));
+
+  let entry;
+  try {
+    entry = await ingestUrl(url, { kind, tags });
+  } catch (e) {
+    console.error(red(`  Failed: ${e.message}`));
+    process.exit(1);
+  }
+
+  console.log(`\n  ${bold(entry.title)}`);
+  console.log(`  ${dim(`kind: ${entry.kind} | source: ${entry.source} | ${entry.body.length} chars`)}`);
+  if (entry.tags?.length) console.log(`  ${dim(`tags: ${entry.tags.join(", ")}`)}`);
+
+  if (dryRun) {
+    console.log(`\n${dim("  Preview (first 500 chars):")}`);
+    console.log(dim("  " + entry.body.slice(0, 500).split("\n").join("\n  ")));
+    console.log(dim("\n  Dry run — entry was not saved."));
+    return;
+  }
+
+  const { resolveConfig } = await import("@context-vault/core/core/config");
+  const { initDatabase, prepareStatements, insertVec, deleteVec } = await import("@context-vault/core/index/db");
+  const { embed } = await import("@context-vault/core/index/embed");
+  const { captureAndIndex } = await import("@context-vault/core/capture");
+  const { indexEntry } = await import("@context-vault/core/index");
+
+  const config = resolveConfig();
+  if (!config.vaultDirExists) {
+    console.error(red(`\n  Vault directory not found: ${config.vaultDir}`));
+    process.exit(1);
+  }
+
+  const db = await initDatabase(config.dbPath);
+  const stmts = prepareStatements(db);
+  const ctx = {
+    db, config, stmts, embed,
+    insertVec: (r, e) => insertVec(stmts, r, e),
+    deleteVec: (r) => deleteVec(stmts, r),
+  };
+
+  const result = await captureAndIndex(ctx, entry, indexEntry);
+  db.close();
+
+  const relPath = result.filePath.replace(config.vaultDir + "/", "");
+  console.log(`\n  ${green("✓")} Saved → ${relPath}`);
+  console.log(`    id: ${result.id}`);
+  console.log();
+}
+
+// ─── Link Command ───────────────────────────────────────────────────────────
+
+async function runLink() {
+  const apiKey = getFlag("--key");
+  const hostedUrl = getFlag("--url") || "https://www.context-vault.com";
+
+  if (!apiKey) {
+    console.log(`\n  ${bold("context-vault link")} --key cv_...\n`);
+    console.log(`  Link your local vault to a hosted Context Vault account.\n`);
+    console.log(`  Options:`);
+    console.log(`    --key <key>   API key (required)`);
+    console.log(`    --url <url>   Hosted server URL (default: https://www.context-vault.com)`);
+    console.log();
+    return;
+  }
+
+  console.log(dim("  Verifying API key..."));
+
+  let user;
+  try {
+    const response = await fetch(`${hostedUrl}/api/me`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    user = await response.json();
+  } catch (e) {
+    console.error(red(`  Verification failed: ${e.message}`));
+    console.error(dim(`  Check your API key and server URL.`));
+    process.exit(1);
+  }
+
+  // Store credentials in config
+  const dataDir = join(HOME, ".context-mcp");
+  const configPath = join(dataDir, "config.json");
+  let config = {};
+  if (existsSync(configPath)) {
+    try { config = JSON.parse(readFileSync(configPath, "utf-8")); } catch {}
+  }
+
+  config.hostedUrl = hostedUrl;
+  config.apiKey = apiKey;
+  config.userId = user.userId || user.id;
+  config.email = user.email;
+  config.linkedAt = new Date().toISOString();
+
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+
+  console.log();
+  console.log(green(`  ✓ Linked to ${user.email}`));
+  console.log(dim(`    Tier: ${user.tier || "free"}`));
+  console.log(dim(`    Server: ${hostedUrl}`));
+  console.log(dim(`    Config: ${configPath}`));
+  console.log();
+}
+
+// ─── Sync Command ───────────────────────────────────────────────────────────
+
+async function runSync() {
+  const dryRun = flags.has("--dry-run");
+  const pushOnly = flags.has("--push-only");
+  const pullOnly = flags.has("--pull-only");
+
+  // Read credentials
+  const dataDir = join(HOME, ".context-mcp");
+  const configPath = join(dataDir, "config.json");
+  let storedConfig = {};
+  if (existsSync(configPath)) {
+    try { storedConfig = JSON.parse(readFileSync(configPath, "utf-8")); } catch {}
+  }
+
+  const apiKey = getFlag("--key") || storedConfig.apiKey;
+  const hostedUrl = getFlag("--url") || storedConfig.hostedUrl || "https://www.context-vault.com";
+
+  if (!apiKey) {
+    console.error(red("  Not linked. Run `context-vault link --key cv_...` first."));
+    process.exit(1);
+  }
+
+  const { resolveConfig } = await import("@context-vault/core/core/config");
+  const { initDatabase, prepareStatements, insertVec, deleteVec } = await import("@context-vault/core/index/db");
+  const { embed } = await import("@context-vault/core/index/embed");
+  const { buildLocalManifest, fetchRemoteManifest, computeSyncPlan, executeSync } = await import("@context-vault/core/sync");
+
+  const config = resolveConfig();
+  if (!config.vaultDirExists) {
+    console.error(red(`  Vault directory not found: ${config.vaultDir}`));
+    process.exit(1);
+  }
+
+  const db = await initDatabase(config.dbPath);
+  const stmts = prepareStatements(db);
+  const ctx = {
+    db, config, stmts, embed,
+    insertVec: (r, e) => insertVec(stmts, r, e),
+    deleteVec: (r) => deleteVec(stmts, r),
+  };
+
+  console.log(dim("  Building manifests..."));
+  const local = buildLocalManifest(ctx);
+
+  let remote;
+  try {
+    remote = await fetchRemoteManifest(hostedUrl, apiKey);
+  } catch (e) {
+    db.close();
+    console.error(red(`  Failed to fetch remote manifest: ${e.message}`));
+    process.exit(1);
+  }
+
+  const plan = computeSyncPlan(local, remote);
+
+  // Apply push-only / pull-only filters
+  if (pushOnly) plan.toPull = [];
+  if (pullOnly) plan.toPush = [];
+
+  console.log();
+  console.log(`  ${bold("Sync Plan")}`);
+  console.log(`    Push (local → remote): ${plan.toPush.length} entries`);
+  console.log(`    Pull (remote → local): ${plan.toPull.length} entries`);
+  console.log(`    Up to date:            ${plan.upToDate.length} entries`);
+
+  if (plan.toPush.length === 0 && plan.toPull.length === 0) {
+    db.close();
+    console.log(green("\n  ✓ Everything in sync."));
+    console.log();
+    return;
+  }
+
+  if (dryRun) {
+    db.close();
+    console.log(dim("\n  Dry run — no changes were made."));
+    console.log();
+    return;
+  }
+
+  console.log(dim("\n  Syncing..."));
+
+  const result = await executeSync(ctx, {
+    hostedUrl,
+    apiKey,
+    plan,
+    onProgress: (phase, current, total) => {
+      process.stdout.write(`\r  ${phase === "push" ? "Pushing" : "Pulling"}... ${current}/${total}`);
+    },
+  });
+
+  db.close();
+
+  console.log(`\r  ${green("✓")} Sync complete                      `);
+  console.log(`    ${green("↑")} ${result.pushed} pushed`);
+  console.log(`    ${green("↓")} ${result.pulled} pulled`);
+  if (result.failed > 0) {
+    console.log(`    ${red("x")} ${result.failed} failed`);
+    for (const err of result.errors.slice(0, 5)) {
+      console.log(`      ${dim(err)}`);
+    }
+  }
+  console.log();
+}
+
 // ─── Serve Command ──────────────────────────────────────────────────────────
 
 async function runServe() {
@@ -1267,8 +1670,19 @@ async function main() {
       runUi();
       break;
     case "import":
+      await runImport();
+      break;
     case "export":
-      console.log(`Import/export removed. Add .md files to vault/ and run \`context-vault reindex\`.`);
+      await runExport();
+      break;
+    case "ingest":
+      await runIngest();
+      break;
+    case "link":
+      await runLink();
+      break;
+    case "sync":
+      await runSync();
       break;
     case "reindex":
       await runReindex();

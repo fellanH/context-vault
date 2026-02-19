@@ -404,6 +404,65 @@ export function createVaultApiRoutes(ctx, masterSecret) {
     return c.json({ imported, failed, errors: errors.slice(0, 10) });
   });
 
+  // ─── GET /api/vault/export — Export all entries ─────────────────────────────
+
+  api.get("/api/vault/export", bearerAuth(), rateLimit(), (c) => {
+    const user = c.get("user");
+    const userCtx = buildUserCtx(ctx, user, masterSecret);
+
+    const clauses = ["(expires_at IS NULL OR expires_at > datetime('now'))"];
+    const params = [];
+    if (userCtx.userId) {
+      clauses.push("user_id = ?");
+      params.push(userCtx.userId);
+    }
+    const where = `WHERE ${clauses.join(" AND ")}`;
+    const rows = ctx.db.prepare(`SELECT * FROM vault ${where} ORDER BY created_at DESC`).all(...params);
+    const entries = rows.map((row) => formatEntry(row, userCtx.decrypt));
+
+    return c.json({ entries, total: entries.length, exported_at: new Date().toISOString() });
+  });
+
+  // ─── POST /api/vault/ingest — Fetch URL and save as entry ─────────────────
+
+  api.post("/api/vault/ingest", bearerAuth(), rateLimit(), async (c) => {
+    const user = c.get("user");
+    const userCtx = buildUserCtx(ctx, user, masterSecret);
+
+    const data = await c.req.json().catch(() => null);
+    if (!data?.url) return c.json({ error: "url is required", code: "INVALID_INPUT" }, 400);
+
+    try {
+      const { ingestUrl } = await import("@context-vault/core/capture/ingest-url");
+      const entry = await ingestUrl(data.url, { kind: data.kind, tags: data.tags });
+      const result = await captureAndIndex(
+        userCtx,
+        { ...entry, userId: userCtx.userId },
+        indexEntry
+      );
+      return c.json(formatEntry(ctx.stmts.getEntryById.get(result.id), userCtx.decrypt), 201);
+    } catch (err) {
+      return c.json({ error: `Ingestion failed: ${err.message}`, code: "INGEST_FAILED" }, 500);
+    }
+  });
+
+  // ─── GET /api/vault/manifest — Lightweight entry list for sync ────────────
+
+  api.get("/api/vault/manifest", bearerAuth(), rateLimit(), (c) => {
+    const user = c.get("user");
+    const userCtx = buildUserCtx(ctx, user, masterSecret);
+
+    const clauses = ["(expires_at IS NULL OR expires_at > datetime('now'))"];
+    const params = [];
+    if (userCtx.userId) {
+      clauses.push("user_id = ?");
+      params.push(userCtx.userId);
+    }
+    const where = `WHERE ${clauses.join(" AND ")}`;
+    const rows = ctx.db.prepare(`SELECT id, kind, title, created_at FROM vault ${where} ORDER BY created_at DESC`).all(...params);
+    return c.json({ entries: rows.map((r) => ({ id: r.id, kind: r.kind, title: r.title || null, created_at: r.created_at })) });
+  });
+
   // ─── GET /api/vault/status — Vault diagnostics + usage stats ───────────────
 
   api.get("/api/vault/status", (c) => {

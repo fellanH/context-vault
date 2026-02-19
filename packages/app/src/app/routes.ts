@@ -13,6 +13,7 @@ import { ApiKeys } from "./pages/settings/ApiKeys";
 import { Billing } from "./pages/settings/Billing";
 import { DataManagement } from "./pages/settings/DataManagement";
 import { Account } from "./pages/settings/Account";
+import { Sync } from "./pages/settings/Sync";
 
 export const router = createBrowserRouter([
   { path: "/login", Component: Login },
@@ -32,6 +33,7 @@ export const router = createBrowserRouter([
       { path: "settings/billing", Component: Billing },
       { path: "settings/data", Component: DataManagement },
       { path: "settings/account", Component: Account },
+      { path: "settings/sync", Component: Sync },
     ],
   },
   { path: "*", Component: NotFound },

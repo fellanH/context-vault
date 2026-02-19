@@ -34,43 +34,16 @@ _Empty — all items shipped._
 
 ## Future
 
-### Near-term
-
-**Data import flexibility**
-
-- Support formats beyond JSON.
-- Allow uploading a folder or document of any kind.
-- Auto-categorize and convert to vault structure (markdown + YAML).
-
-**Local-mode API parity**
-
-- Add local endpoints: `/api/vault/import`, `/api/vault/export`, `/api/account` (if desired).
-
-**Account management**
-
-- Local users: sign in to / create cloud account.
-- Connect local account to cloud account.
-- Seamless transition between local and cloud.
-
-### Later
-
-**External URL ingestion**
-
-- Accept URLs to hosted docs, blog articles, social posts, or video.
-- Different pipelines per source type to convert to structured context documents.
-
-**Export & data ownership**
-
-- **Principle:** Never lock data behind paywall; free users must be able to export.
-- **Incentive for paid:** Managed hosting, storage, convenience.
-- **Privacy:** Data always private, fully encrypted, accessible only to account owner.
-- Improve export UX to avoid lock-in; easy data access is critical.
-
 ### Someday
 
 **Pricing & free tier**
 
 - Review and refine pricing tiers and free user model over time.
+
+**Multi-source URL ingestion pipelines**
+
+- Different pipelines per source type (video transcripts, social posts, PDFs).
+- Current URL ingestion handles HTML pages; extend to more content types.
 
 ---
 
@@ -94,3 +67,8 @@ _Empty — all items shipped._
 | Billing page fails on localhost | Fixed | Local mode billing page shows informational card instead of broken upgrade buttons; links to create cloud account. | 2026-02 |
 | Extension install link missing from local mode | Fixed | Added `install-extension` onboarding step to local mode; added persistent "Browser Extension" link in sidebar. | 2026-02 |
 | Extension UI hardcoded dark theme | Fixed | Extension theme.css now defaults to light mode with `prefers-color-scheme: dark` media query, matching app design tokens. | 2026-02 |
+| Data import flexibility | Done | Multi-format import (markdown, CSV/TSV, JSON, text, directories). CLI `import`, REST bulk/file endpoints, ChatGPT export support. | 2026-02 |
+| Local-mode API parity | Done | Added export (JSON/CSV), CORS preflight, bulk import endpoints to local server. | 2026-02 |
+| External URL ingestion | Done | `ingest_url` MCP tool, CLI `ingest` command, REST endpoints on local + hosted. HTML→markdown with content extraction. | 2026-02 |
+| Export & data ownership | Done | `context-vault export` CLI + `GET /api/vault/export` on both local and hosted. JSON and CSV formats. | 2026-02 |
+| Account linking & sync | Done | `context-vault link/sync` CLI, bidirectional additive-only sync, manifest-based diffing, dashboard Sync settings page. | 2026-02 |
