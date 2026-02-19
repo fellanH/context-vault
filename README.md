@@ -375,6 +375,8 @@ This means:
 
 The web dashboard is built with React and Vite in `packages/app`. It provides a full UI for browsing, searching, and managing your vault entries. The `context-mcp ui` command serves the built app from `packages/app/dist`.
 
+The standalone marketing website lives in `packages/marketing` (landing page + blog) and is intentionally isolated from the product dashboard app.
+
 ## How It Works
 
 ```
@@ -416,6 +418,10 @@ packages/app/
 ├── src/                 React app source (Vite + React Router)
 ├── dist/                Built static assets (served by `ui` command)
 └── vite.config.ts       Vite configuration
+
+packages/marketing/
+├── src/                 Marketing site source (landing + blog)
+└── vite.config.ts       Vite configuration
 ```
 
 Each layer has a single responsibility and can be understood independently. The server is the only module that imports across layer boundaries.
@@ -428,6 +434,7 @@ core/files.js, core/frontmatter.js  ←  capture/
 core/config.js                          server/  ←  packages/local/bin/cli.js
                                               ↑
 index/embed.js  ←  retrieve/        ←   packages/app/ (web dashboard)
+                                      ←   packages/marketing/ (marketing site)
                                               ↑
 index/db.js     ←──────────────────  (all consumers)
 ```

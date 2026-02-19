@@ -31,9 +31,14 @@ Uses `@context-vault/core` for all vault operations (same 6 MCP tools as local m
 |----------|----------|---------|-------------|
 | `PORT` | No | `3000` | HTTP server port |
 | `AUTH_REQUIRED` | No | `false` | Enable API key auth for MCP endpoint |
+| `PUBLIC_URL` | No | — | Canonical app URL used for OAuth/login redirects (set to app subdomain) |
 | `STRIPE_SECRET_KEY` | No | — | Stripe API secret key (enables billing) |
 | `STRIPE_WEBHOOK_SECRET` | No | — | Stripe webhook signing secret |
 | `STRIPE_PRICE_PRO` | No | — | Stripe Price ID for Pro tier |
+| `APP_HOSTS` | No | `app.context-vault.com` | Comma-separated hostnames that should serve product app frontend |
+| `MARKETING_HOSTS` | No | `www.context-vault.com,context-vault.com` | Comma-separated hostnames that should serve marketing frontend |
+| `DEFAULT_FRONTEND` | No | `marketing` | Frontend for unknown hosts (`marketing` or `app`) |
+| `LOCALHOST_FRONTEND` | No | `app` | Frontend for localhost dev host (`marketing` or `app`) |
 | `CONTEXT_MCP_DATA_DIR` | No | `~/.context-mcp` | Data directory (databases) |
 | `CONTEXT_MCP_VAULT_DIR` | No | `<data_dir>/vault` | Vault markdown file storage |
 
@@ -88,15 +93,16 @@ curl http://localhost:3000/api/billing/usage \
 
 Recommended production setup is a single Fly.io app:
 
-| Surface | Route | Served by |
-|---------|-------|-----------|
-| Hosted web app (SPA) | `/` | Hono static serving (`packages/app/dist`) |
+| Surface | Host / Route | Served by |
+|---------|---------------|-----------|
+| Marketing site (SPA) | `www.context-vault.com/*` | Hono static serving (`packages/marketing/dist`) |
+| Product app (SPA) | `app.context-vault.com/*` | Hono static serving (`packages/app/dist`) |
 | Hosted REST API | `/api/*` | Hono routes |
 | MCP endpoint | `/mcp` | Streamable HTTP MCP transport |
 | OpenAPI schema | `/api/vault/openapi.json` | Public route |
 | Privacy policy | `/privacy` | Public route |
 
-This keeps onboarding and API usage on one canonical origin (for example `https://www.context-vault.com`).
+This keeps marketing and product surfaces isolated while retaining one hosted runtime.
 
 ### Fly.io (recommended)
 
@@ -127,9 +133,15 @@ app = "context-vault"
   [build.context]
     path = "."
 
+  [build.args]
+    VITE_APP_BASE_URL = "https://app.context-vault.com"
+
 [env]
   PORT = "3000"
   AUTH_REQUIRED = "true"
+  PUBLIC_URL = "https://app.context-vault.com"
+  APP_HOSTS = "app.context-vault.com"
+  MARKETING_HOSTS = "www.context-vault.com,context-vault.com"
   CONTEXT_MCP_DATA_DIR = "/data"
   CONTEXT_MCP_VAULT_DIR = "/data/vault"
 
@@ -165,9 +177,15 @@ railway up
 ### Docker (standalone)
 
 ```bash
-docker build -f packages/hosted/Dockerfile -t context-vault .
+docker build \
+  --build-arg VITE_APP_BASE_URL=https://app.context-vault.com \
+  -f packages/hosted/Dockerfile \
+  -t context-vault .
 docker run -p 3000:3000 \
   -e AUTH_REQUIRED=true \
+  -e PUBLIC_URL=https://app.context-vault.com \
+  -e APP_HOSTS=app.context-vault.com \
+  -e MARKETING_HOSTS=www.context-vault.com,context-vault.com \
   -e STRIPE_SECRET_KEY=sk_live_... \
   -e STRIPE_WEBHOOK_SECRET=whsec_... \
   -e STRIPE_PRICE_PRO=price_... \

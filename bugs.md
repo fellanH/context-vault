@@ -1,6 +1,16 @@
 # Bugs, Improvements & Roadmap
 
-**Last updated:** 2026-02-19
+**Last updated:** 2026-02-20
+
+on local host the "Connect AI tools" command generates this command "npx context-vault connect --key YOUR_API_KEY" we should have it autopopulate the api key or show it without api key on local if no api keys are used on local mode. 
+
+We need to have a clearer separation of concerns between local and hosted app behaviour. 
+
+On the app on localhost on /billing when click "upgrade to pro" it throws "Failed to start checkout"
+
+We should include a quick link in the app to guide users to install the browser extension.
+
+Extension UI is a blank dark-blue color, should be a UI that follows the same theme and styles as the app
 
 ---
 
@@ -28,25 +38,7 @@ _Nothing in progress._
 
 ## Backlog
 
-### Dashboard & onboarding `P1`
-
-- Add quick access to main user journey steps on first dashboard view.
-- Surface missing setup steps: local folder connection, hosted vault upload, MCP server in AI agent tools.
-- Improve user journey so onboarding is seamless and intuitive at all stages.
-
-### Hosted UX `P1`
-
-- **Registration:** Auto-connect MCP server settings to major providers for new users.
-- **Local folder:** Allow folder picker (Finder) instead of typing path; enable connect without login.
-- **Post-connect:** After creating account post local-connect, prompt to upload local folder to hosted vault with optional sync. (Evaluate and discuss.)
-
-### Auth `P1`
-
-- Replace confusing API key creation during login/signup with proper auth (e.g. Google email sign-in).
-
-### CLI / Setup `P2`
-
-- Add Codex and Antigravity support during `context-mcp setup`.
+_Empty — all items shipped._
 
 ---
 
@@ -104,3 +96,7 @@ _Nothing in progress._
 | MCP server status visibility | Added | Top bar shows mode + connection: `Local/Hosted` + `Connected/Degraded/Disconnected`. | 2026-02 |
 | Dashboard quick setup bar | Added | When steps incomplete: direct actions for Create API key, Copy MCP config, Add first entry; "Show full checklist" when dismissed. | 2026-02 |
 | First-entry step links | Added | Checklist now links to Add entry and Import data when first-entry incomplete. | 2026-02 |
+| Dashboard & onboarding redesign | Done | Hero step cards with icons, action buttons, completion tracking; "Setup complete" badge with reset. | 2026-02 |
+| Hosted UX improvements | Done | CLI `connect --key` command, native folder picker (Browse button), bulk import endpoint, local-to-hosted upload prompt. | 2026-02 |
+| Google OAuth sign-in | Done | Google OAuth backend + frontend; auto API key generation; AuthCallback page; email registration kept as fallback. | 2026-02 |
+| Codex & Antigravity CLI support | Done | Added Codex (OpenAI) and Antigravity (Google) to `context-mcp setup` detection, configuration, and uninstall. | 2026-02 |

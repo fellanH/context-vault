@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # smoke-test.sh — Post-deploy verification for context-vault hosted server.
 #
-# Usage: bash scripts/smoke-test.sh [BASE_URL]
-#   Default: https://www.context-vault.com
+# Usage: bash scripts/smoke-test.sh [MARKETING_BASE_URL] [APP_BASE_URL]
+#   Default marketing base: https://www.context-vault.com
+#   Optional app base:      https://app.context-vault.com
 
 set -euo pipefail
 
 BASE="${1:-https://www.context-vault.com}"
+APP_BASE="${2:-}"
 PASS=0
 FAIL=0
 
@@ -25,6 +27,9 @@ check() {
 }
 
 echo "Smoke testing: $BASE"
+if [ -n "$APP_BASE" ]; then
+  echo "App base:      $APP_BASE"
+fi
 echo ""
 
 # ─── Basic Endpoints ──────────────────────────────────────────────────────────
@@ -35,11 +40,18 @@ check "GET / returns 200" "200" "$BASE/"
 # Root HTML shape
 ROOT_BODY=$(curl -s --max-time 5 "$BASE/")
 if echo "$ROOT_BODY" | grep -q '<div id="root"'; then
-  echo "  PASS: / includes app root container"
+  echo "  PASS: / includes root container"
   ((PASS++))
 else
-  echo "  FAIL: / missing app root container"
+  echo "  FAIL: / missing root container"
   ((FAIL++))
+fi
+
+# Optional app-domain checks
+if [ -n "$APP_BASE" ]; then
+  check "GET app / returns 200" "200" "$APP_BASE/"
+  check "GET app /login returns 200" "200" "$APP_BASE/login"
+  check "GET app /search returns 200" "200" "$APP_BASE/search"
 fi
 
 # Health check
@@ -82,8 +94,8 @@ check "GET /privacy returns 200" "200" "$BASE/privacy"
 # Management API without auth returns 401
 check "GET /api/keys without auth returns 401" "401" "$BASE/api/keys"
 
-# 404 for unknown routes
-check "GET /unknown returns 404" "404" "$BASE/unknown"
+# 404 for unknown API routes
+check "GET /api/unknown returns 404" "404" "$BASE/api/unknown"
 
 # ─── Security Checks ─────────────────────────────────────────────────────────
 

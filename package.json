@@ -8,11 +8,14 @@
     "packages/local",
     "packages/hosted",
     "packages/app",
+    "packages/marketing",
     "packages/extension"
   ],
   "scripts": {
     "cli": "node packages/local/bin/cli.js",
     "ui": "npm run build --workspace=packages/app && npm run cli -- ui",
+    "marketing:dev": "npm run dev --workspace=packages/marketing",
+    "marketing:build": "npm run build --workspace=packages/marketing",
     "test": "vitest run",
     "test:watch": "vitest",
     "release": "npm publish --workspace packages/local",
