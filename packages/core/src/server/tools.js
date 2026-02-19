@@ -16,6 +16,7 @@ import { gatherVaultStatus } from "../core/status.js";
 import { categoryFor } from "../core/categories.js";
 import { normalizeKind } from "../core/files.js";
 import { ok, err, ensureVaultExists, ensureValidKind } from "./helpers.js";
+import { isEmbedAvailable } from "../index/embed.js";
 
 /**
  * Register all MCP tools on the server.
@@ -23,9 +24,36 @@ import { ok, err, ensureVaultExists, ensureValidKind } from "./helpers.js";
  * @param {import("@modelcontextprotocol/sdk/server/mcp.js").McpServer} server
  * @param {{ db, config, stmts, embed, insertVec, deleteVec }} ctx
  */
+const TOOL_TIMEOUT_MS = 60_000;
+
 export function registerTools(server, ctx) {
   const { config } = ctx;
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;
+
+  // ─── Tool wrapper: tracks in-flight ops for graceful shutdown + timeout ────
+
+  function tracked(handler) {
+    return async (...args) => {
+      if (ctx.activeOps) ctx.activeOps.count++;
+      let timer;
+      try {
+        return await Promise.race([
+          Promise.resolve(handler(...args)),
+          new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error("TOOL_TIMEOUT")), TOOL_TIMEOUT_MS);
+          }),
+        ]);
+      } catch (e) {
+        if (e.message === "TOOL_TIMEOUT") {
+          return err("Tool timed out after 60s. Try a simpler query or run `context-mcp reindex` first.", "TIMEOUT");
+        }
+        throw e;
+      } finally {
+        clearTimeout(timer);
+        if (ctx.activeOps) ctx.activeOps.count--;
+      }
+    };
+  }
 
   // ─── Auto-Reindex (runs once per session, on first tool call) ──────────────
 
@@ -76,7 +104,7 @@ export function registerTools(server, ctx) {
       until: z.string().optional().describe("ISO date, return entries created before this"),
       limit: z.number().optional().describe("Max results to return (default 10)"),
     },
-    async ({ query, kind, category, identity_key, tags, since, until, limit }) => {
+    tracked(async ({ query, kind, category, identity_key, tags, since, until, limit }) => {
       const hasQuery = query?.trim();
       const hasFilters = kind || category || tags?.length || since || until || identity_key;
       if (!hasQuery && !hasFilters) return err("Required: query or at least one filter (kind, category, tags, since, until, identity_key)", "INVALID_INPUT");
@@ -176,6 +204,7 @@ export function registerTools(server, ctx) {
 
       const lines = [];
       if (reindexFailed) lines.push(`> **Warning:** Auto-reindex failed. Results may be stale. Run \`context-mcp reindex\` to fix.\n`);
+      if (hasQuery && isEmbedAvailable() === false) lines.push(`> **Note:** Semantic search unavailable — results ranked by keyword match only. Run \`context-mcp setup\` to download the embedding model.\n`);
       const heading = hasQuery ? `Results for "${query}"` : "Filtered entries";
       lines.push(`## ${heading} (${filtered.length} matches)\n`);
       for (let i = 0; i < filtered.length; i++) {
@@ -192,7 +221,7 @@ export function registerTools(server, ctx) {
         lines.push(`_Showing events from last ${config.eventDecayDays || 30} days. Use since/until for custom range._`);
       }
       return ok(lines.join("\n"));
-    }
+    })
   );
 
   // ─── save_context (write / update) ────────────────────────────────────────
@@ -212,7 +241,7 @@ export function registerTools(server, ctx) {
       identity_key: z.string().optional().describe("Required for entity kinds (contact, project, tool, source). The unique identifier for this entity."),
       expires_at: z.string().optional().describe("ISO date for TTL expiry"),
     },
-    async ({ id, kind, title, body, tags, meta, folder, source, identity_key, expires_at }) => {
+    tracked(async ({ id, kind, title, body, tags, meta, folder, source, identity_key, expires_at }) => {
       const vaultErr = ensureVaultExists(config);
       if (vaultErr) return vaultErr;
 
@@ -288,7 +317,7 @@ export function registerTools(server, ctx) {
       if (tags?.length) parts.push(`  tags: ${tags.join(", ")}`);
       parts.push("", "_Use this id to update or delete later._");
       return ok(parts.join("\n"));
-    }
+    })
   );
 
   // ─── list_context (browse) ────────────────────────────────────────────────
@@ -305,7 +334,7 @@ export function registerTools(server, ctx) {
       limit: z.number().optional().describe("Max results to return (default 20, max 100)"),
       offset: z.number().optional().describe("Skip first N results for pagination"),
     },
-    async ({ kind, category, tags, since, until, limit, offset }) => {
+    tracked(async ({ kind, category, tags, since, until, limit, offset }) => {
       await ensureIndexed();
 
       const clauses = [];
@@ -366,7 +395,7 @@ export function registerTools(server, ctx) {
       }
 
       return ok(lines.join("\n"));
-    }
+    })
   );
 
   // ─── delete_context (remove) ──────────────────────────────────────────────
@@ -377,7 +406,7 @@ export function registerTools(server, ctx) {
     {
       id: z.string().describe("The entry ULID to delete"),
     },
-    async ({ id }) => {
+    tracked(async ({ id }) => {
       if (!id?.trim()) return err("Required: id (non-empty string)", "INVALID_INPUT");
       await ensureIndexed();
 
@@ -404,7 +433,7 @@ export function registerTools(server, ctx) {
       ctx.stmts.deleteEntry.run(id);
 
       return ok(`Deleted ${entry.kind}: ${entry.title || "(untitled)"} [${id}]`);
-    }
+    })
   );
 
   // ─── submit_feedback (bug/feature reports) ────────────────────────────────
@@ -418,7 +447,7 @@ export function registerTools(server, ctx) {
       body: z.string().describe("Detailed description"),
       severity: z.enum(["low", "medium", "high"]).optional().describe("Severity level (default: medium)"),
     },
-    async ({ type, title, body, severity }) => {
+    tracked(async ({ type, title, body, severity }) => {
       const vaultErr = ensureVaultExists(config);
       if (vaultErr) return vaultErr;
 
@@ -441,7 +470,7 @@ export function registerTools(server, ctx) {
 
       const relPath = entry.filePath ? entry.filePath.replace(config.vaultDir + "/", "") : entry.filePath;
       return ok(`Feedback submitted: ${type} [${effectiveSeverity}] → ${relPath}\n  id: ${entry.id}\n  title: ${title}`);
-    }
+    })
   );
 
   // ─── context_status (diagnostics) ──────────────────────────────────────────

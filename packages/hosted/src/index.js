@@ -24,7 +24,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { join } from "node:path";
-import { writeFileSync, unlinkSync, readFileSync, statfsSync } from "node:fs";
+import { writeFileSync, unlinkSync, readFileSync, statfsSync, existsSync } from "node:fs";
 import { registerTools } from "@context-vault/core/server/tools";
 import { createCtx } from "./server/ctx.js";
 import { initMetaDb, prepareMetaStatements, getMetaDb } from "./auth/meta-db.js";
@@ -39,6 +39,70 @@ import { scheduleBackups, lastBackupTimestamp } from "./backup/r2-backup.js";
 // ─── Config ─────────────────────────────────────────────────────────────────
 
 const AUTH_REQUIRED = process.env.AUTH_REQUIRED === "true";
+const APP_STATIC_ROOT = "./packages/app/dist";
+const APP_INDEX_PATH = `${APP_STATIC_ROOT}/index.html`;
+const MARKETING_STATIC_ROOT = "./packages/marketing/dist";
+const MARKETING_INDEX_PATH = `${MARKETING_STATIC_ROOT}/index.html`;
+const DEFAULT_FRONTEND = process.env.DEFAULT_FRONTEND === "app" ? "app" : "marketing";
+const LOCALHOST_FRONTEND = process.env.LOCALHOST_FRONTEND === "marketing" ? "marketing" : "app";
+const APP_HOSTS = parseHosts(process.env.APP_HOSTS || "app.context-vault.com");
+const MARKETING_HOSTS = parseHosts(process.env.MARKETING_HOSTS || "www.context-vault.com,context-vault.com");
+const APP_ROUTE_PREFIXES = ["/login", "/register", "/auth", "/search", "/vault", "/settings"];
+
+function parseHosts(rawHosts) {
+  return new Set(
+    String(rawHosts)
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function normalizeHost(hostHeader) {
+  return (hostHeader || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, "");
+}
+
+function isLocalHost(host) {
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function resolveFrontend(hostHeader) {
+  const host = normalizeHost(hostHeader);
+  if (APP_HOSTS.has(host)) return "app";
+  if (MARKETING_HOSTS.has(host)) return "marketing";
+  if (isLocalHost(host)) return LOCALHOST_FRONTEND;
+  return DEFAULT_FRONTEND;
+}
+
+function getFrontendAssetPaths(c) {
+  const host = c.req.header("x-forwarded-host") || c.req.header("host") || "";
+  const frontend = resolveFrontend(host);
+  if (frontend === "app") {
+    return { frontend, root: APP_STATIC_ROOT, indexPath: APP_INDEX_PATH };
+  }
+  return { frontend, root: MARKETING_STATIC_ROOT, indexPath: MARKETING_INDEX_PATH };
+}
+
+function isAppRoute(pathname) {
+  return APP_ROUTE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function maybeRedirectToAppHost(c, frontend) {
+  if (frontend !== "marketing" || !isAppRoute(c.req.path) || APP_HOSTS.size === 0) {
+    return null;
+  }
+
+  const url = new URL(c.req.url);
+  const appHost = Array.from(APP_HOSTS)[0];
+  const proto = (c.req.header("x-forwarded-proto") || url.protocol.replace(":", "") || "https")
+    .split(",")[0]
+    .trim();
+  return c.redirect(`${proto}://${appHost}${url.pathname}${url.search}`, 302);
+}
 
 // ─── Startup Validation ─────────────────────────────────────────────────────
 
@@ -73,6 +137,13 @@ function validateEnv(config) {
   } catch (err) {
     console.error(`[hosted] \u26a0 Vault dir not writable: ${config.vaultDir} — ${err.message}`);
   }
+
+  if (!existsSync(APP_INDEX_PATH)) {
+    console.warn(`[hosted] \u26a0 App dist not found: ${APP_INDEX_PATH}`);
+  }
+  if (!existsSync(MARKETING_INDEX_PATH)) {
+    console.warn(`[hosted] \u26a0 Marketing dist not found: ${MARKETING_INDEX_PATH}`);
+  }
 }
 
 // ─── Shared Context (initialized once at startup) ───────────────────────────
@@ -89,6 +160,9 @@ initMetaDb(metaDbPath);
 prepareMetaStatements(initMetaDb(metaDbPath));
 console.log(`[hosted] Meta DB: ${metaDbPath}`);
 console.log(`[hosted] Auth: ${AUTH_REQUIRED ? "required" : "open (dev mode)"}`);
+console.log(`[hosted] Frontend app hosts: ${Array.from(APP_HOSTS).join(", ") || "(none)"}`);
+console.log(`[hosted] Frontend marketing hosts: ${Array.from(MARKETING_HOSTS).join(", ") || "(none)"}`);
+console.log(`[hosted] Frontend defaults: unknown=${DEFAULT_FRONTEND}, localhost=${LOCALHOST_FRONTEND}`);
 
 // ─── Automated Backups ───────────────────────────────────────────────────────
 
@@ -101,6 +175,8 @@ try {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
   pkgVersion = pkg.version || pkgVersion;
 } catch {}
+
+const MCP_REQUEST_TIMEOUT_MS = 60_000;
 
 // ─── Factory: create MCP server per request ─────────────────────────────────
 
@@ -204,57 +280,72 @@ app.route("/", createManagementRoutes(ctx));
 app.route("/", createVaultApiRoutes(ctx, VAULT_MASTER_SECRET));
 
 // MCP endpoint — optionally auth-protected
+async function handleMcpRequest(c, user) {
+  let timer;
+  try {
+    const transport = new WebStandardStreamableHTTPServerTransport();
+    const server = createMcpServer(user);
+    await server.connect(transport);
+    return await Promise.race([
+      transport.handleRequest(c.req.raw),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("MCP request timed out")), MCP_REQUEST_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (err) {
+    const isTimeout = err.message === "MCP request timed out";
+    console.error(JSON.stringify({
+      level: "error",
+      requestId: c.get("requestId") || null,
+      path: "/mcp",
+      error: err.message,
+      timeout: isTimeout,
+      ts: new Date().toISOString(),
+    }));
+    return c.json(
+      { error: isTimeout ? "Request timed out" : "Internal server error" },
+      isTimeout ? 504 : 500,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 if (AUTH_REQUIRED) {
   app.all("/mcp", bearerAuth(), rateLimit(), async (c) => {
-    try {
-      const user = c.get("user");
-      const transport = new WebStandardStreamableHTTPServerTransport();
-      const server = createMcpServer(user);
-      await server.connect(transport);
-      return transport.handleRequest(c.req.raw);
-    } catch (err) {
-      console.error(JSON.stringify({
-        level: "error",
-        requestId: c.get("requestId") || null,
-        path: "/mcp",
-        error: err.message,
-        ts: new Date().toISOString(),
-      }));
-      return c.json({ error: "Internal server error" }, 500);
-    }
+    return handleMcpRequest(c, c.get("user"));
   });
 } else {
   app.all("/mcp", async (c) => {
-    try {
-      const transport = new WebStandardStreamableHTTPServerTransport();
-      const server = createMcpServer(null);
-      await server.connect(transport);
-      return transport.handleRequest(c.req.raw);
-    } catch (err) {
-      console.error(JSON.stringify({
-        level: "error",
-        requestId: c.get("requestId") || null,
-        path: "/mcp",
-        error: err.message,
-        ts: new Date().toISOString(),
-      }));
-      return c.json({ error: "Internal server error" }, 500);
-    }
+    return handleMcpRequest(c, null);
   });
 }
 
-// ─── Static App Serving ──────────────────────────────────────────────────────
+// ─── Static Frontend Serving ─────────────────────────────────────────────────
 
-// Serve the frontend app from packages/app/dist (built by Vite)
-// This must come after all API + MCP routes so they take priority
-app.use("/*", serveStatic({ root: "./packages/app/dist" }));
-// SPA fallback: serve index.html for non-API/MCP routes (client-side routing)
+// Host-based frontend serving:
+// - marketing hosts (for example www.context-vault.com) -> packages/marketing/dist
+// - app hosts (for example app.context-vault.com) -> packages/app/dist
+// API and MCP routes remain on this same server and always win by order.
+app.use("/*", (c, next) => {
+  const path = c.req.path;
+  if (path.startsWith("/api/") || path.startsWith("/mcp") || path === "/health") {
+    return next();
+  }
+  const { root } = getFrontendAssetPaths(c);
+  return serveStatic({ root })(c, next);
+});
+
+// SPA fallback: serve selected frontend index.html for non-API/MCP routes.
 app.get("*", (c, next) => {
   const path = c.req.path;
   if (path.startsWith("/api/") || path.startsWith("/mcp") || path === "/health") {
     return next();
   }
-  return serveStatic({ path: "./packages/app/dist/index.html" })(c, next);
+  const { frontend, indexPath } = getFrontendAssetPaths(c);
+  const redirect = maybeRedirectToAppHost(c, frontend);
+  if (redirect) return redirect;
+  return serveStatic({ path: indexPath })(c, next);
 });
 
 // ─── Start Server ───────────────────────────────────────────────────────────

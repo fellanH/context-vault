@@ -2,7 +2,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,15 +19,28 @@ import { registerTools } from "@context-vault/core/server/tools";
 async function main() {
   let phase = "CONFIG";
   let db;
+  let config;
 
   try {
     // ── Phase: CONFIG ────────────────────────────────────────────────────────
-    const config = resolveConfig();
+    config = resolveConfig();
 
     // ── Phase: DIRS ──────────────────────────────────────────────────────────
     phase = "DIRS";
     mkdirSync(config.dataDir, { recursive: true });
     mkdirSync(config.vaultDir, { recursive: true });
+
+    // Verify vault directory is writable (catch permission issues early)
+    try {
+      const probe = join(config.vaultDir, ".write-probe");
+      writeFileSync(probe, "");
+      unlinkSync(probe);
+    } catch (writeErr) {
+      console.error(`[context-mcp] FATAL: Vault directory is not writable: ${config.vaultDir}`);
+      console.error(`[context-mcp] ${writeErr.message}`);
+      console.error(`[context-mcp] Fix permissions: chmod u+w "${config.vaultDir}"`);
+      process.exit(1);
+    }
 
     // Write .context-mcp marker (non-fatal)
     try {
@@ -60,6 +73,7 @@ async function main() {
       embed,
       insertVec: (rowid, embedding) => insertVec(stmts, rowid, embedding),
       deleteVec: (rowid) => deleteVec(stmts, rowid),
+      activeOps: { count: 0 },
     };
 
     // ── Phase: SERVER ────────────────────────────────────────────────────────
@@ -72,8 +86,7 @@ async function main() {
     registerTools(server, ctx);
 
     // ── Graceful Shutdown ────────────────────────────────────────────────────
-    function shutdown(signal) {
-      console.error(`[context-mcp] Received ${signal}, shutting down...`);
+    function closeDb() {
       try {
         if (db.inTransaction) {
           console.error("[context-mcp] Rolling back active transaction...");
@@ -86,6 +99,28 @@ async function main() {
         console.error(`[context-mcp] Shutdown error: ${shutdownErr.message}`);
       }
       process.exit(0);
+    }
+
+    function shutdown(signal) {
+      console.error(`[context-mcp] Received ${signal}, shutting down...`);
+
+      if (ctx.activeOps.count > 0) {
+        console.error(`[context-mcp] Waiting for ${ctx.activeOps.count} in-flight operation(s)...`);
+        const check = setInterval(() => {
+          if (ctx.activeOps.count === 0) {
+            clearInterval(check);
+            closeDb();
+          }
+        }, 100);
+        // Force shutdown after 5 seconds even if ops are still running
+        setTimeout(() => {
+          clearInterval(check);
+          console.error(`[context-mcp] Force shutdown — ${ctx.activeOps.count} operation(s) still running`);
+          closeDb();
+        }, 5000);
+      } else {
+        closeDb();
+      }
     }
     process.on("SIGINT", () => shutdown("SIGINT"));
     process.on("SIGTERM", () => shutdown("SIGTERM"));
@@ -129,7 +164,7 @@ async function main() {
 
     console.error(`[context-mcp] Fatal error during ${phase} phase: ${err.message}`);
     if (phase === "DB") {
-      console.error(`[context-mcp] Try deleting the DB file and restarting: rm "${err.dbPath || "vault.db"}"`);
+      console.error(`[context-mcp] Try deleting the DB file and restarting: rm "${config?.dbPath || "vault.db"}"`);
     }
     process.exit(1);
   }

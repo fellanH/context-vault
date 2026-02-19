@@ -136,11 +136,7 @@ export async function initDatabase(dbPath) {
     try {
       sqliteVec.load(db);
     } catch (e) {
-      console.error(`[context-mcp] Failed to load sqlite-vec native module.`);
-      console.error(`[context-mcp] This usually means prebuilt binaries aren't available for your platform.`);
-      console.error(`[context-mcp] Try: npm rebuild sqlite-vec`);
-      console.error(`[context-mcp] Error: ${e.message}`);
-      throw e;
+      throw new NativeModuleError(e);
     }
     return db;
   }
