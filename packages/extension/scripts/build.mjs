@@ -35,6 +35,7 @@ const watchOpts = watching ? { watch: {} } : {};
 
 const popupConfig = {
   root: resolve(root, "src/popup"),
+  base: "./",
   plugins: [react()],
   build: {
     outDir: resolve(dist, "popup"),
@@ -52,6 +53,7 @@ const popupConfig = {
 
 const onboardingConfig = {
   root: resolve(root, "src/onboarding"),
+  base: "./",
   plugins: [react()],
   build: {
     outDir: resolve(dist, "onboarding"),
