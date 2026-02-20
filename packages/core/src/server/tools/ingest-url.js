@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { captureAndIndex } from "../../capture/index.js";
 import { ok, err, ensureVaultExists } from "../helpers.js";
+import {
+  MAX_KIND_LENGTH,
+  MAX_TAG_LENGTH,
+  MAX_TAGS_COUNT,
+} from "../../constants.js";
 
-// ─── Input size limits (mirrors hosted validation) ────────────────────────────
 const MAX_URL_LENGTH = 2048;
-const MAX_KIND_LENGTH = 64;
-const MAX_TAG_LENGTH = 100;
-const MAX_TAGS_COUNT = 20;
 
 export const name = "ingest_url";
 
