@@ -14,7 +14,7 @@ import { indexEntry } from "../index/index.js";
 /**
  * Build a manifest of local vault entries (id → { id, created_at, kind, title }).
  *
- * @param {{ db, stmts }} ctx
+ * @param {import('../server/types.js').BaseCtx} ctx
  * @returns {Map<string, { id: string, created_at: string, kind: string, title: string|null }>}
  */
 export function buildLocalManifest(ctx) {
@@ -107,7 +107,7 @@ export function computeSyncPlan(local, remote) {
 /**
  * Execute a sync plan: push local entries to remote, pull remote entries to local.
  *
- * @param {object} ctx - Vault context
+ * @param {import('../server/types.js').BaseCtx & Partial<import('../server/types.js').HostedCtxExtensions>} ctx
  * @param {{ hostedUrl: string, apiKey: string, plan: SyncPlan, onProgress?: (phase: string, current: number, total: number) => void }} opts
  * @returns {Promise<{ pushed: number, pulled: number, failed: number, errors: string[] }>}
  */

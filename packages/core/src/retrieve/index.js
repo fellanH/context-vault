@@ -68,7 +68,7 @@ export function buildFilterClauses({ categoryFilter, since, until, userIdFilter,
 /**
  * Hybrid search combining FTS5 text matching and vector similarity.
  *
- * @param {{ db, embed }} ctx
+ * @param {import('../server/types.js').BaseCtx} ctx
  * @param {string} query
  * @param {{ kindFilter?: string|null, categoryFilter?: string|null, since?: string|null, until?: string|null, limit?: number, offset?: number }} opts
  * @returns {Promise<Array<{id, kind, category, title, body, meta, tags, source, file_path, created_at, score}>>}

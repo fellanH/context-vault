@@ -25,8 +25,8 @@ const EMBED_BATCH_SIZE = 32;
  *
  * For entities with identity_key: uses upsertByIdentityKey if existing row found.
  *
- * @param {{ db, stmts, embed, insertVec, deleteVec }} ctx
- * @param {{ id, kind, category, title, body, meta, tags, source, filePath, createdAt, identity_key, expires_at }} entry
+ * @param {import('../server/types.js').BaseCtx & Partial<import('../server/types.js').HostedCtxExtensions>} ctx
+ * @param {{ id, kind, category, title, body, meta, tags, source, filePath, createdAt, identity_key, expires_at, userId }} entry
  */
 export async function indexEntry(ctx, { id, kind, category, title, body, meta, tags, source, filePath, createdAt, identity_key, expires_at, userId }) {
   const tagsJson = tags ? JSON.stringify(tags) : null;
@@ -108,7 +108,7 @@ export async function indexEntry(ctx, { id, kind, category, title, body, meta, t
  * P3: Detects title/tag/meta changes, not just body.
  * P4: Batches embedding calls for performance.
  *
- * @param {{ db, config, stmts, embed, insertVec, deleteVec }} ctx
+ * @param {import('../server/types.js').BaseCtx} ctx
  * @param {{ fullSync?: boolean }} opts — fullSync=true adds/updates/deletes; false=add-only
  * @returns {Promise<{added: number, updated: number, removed: number, unchanged: number}>}
  */
