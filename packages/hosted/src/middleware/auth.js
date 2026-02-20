@@ -27,6 +27,12 @@ export function bearerAuth() {
       return c.json({ error: "Invalid or expired API key" }, 401);
     }
 
+    // Extract optional encryption secret for split-authority decryption
+    const vaultSecret = c.req.header("X-Vault-Secret");
+    if (vaultSecret && vaultSecret.startsWith("cvs_")) {
+      user.clientKeyShare = vaultSecret;
+    }
+
     // Attach user info to the request context
     c.set("user", user);
     await next();

@@ -60,6 +60,24 @@ const objections = [
   },
 ];
 
+const faqs = [
+  {
+    question: "Can I stay fully local?",
+    answer:
+      "Yes. Context Vault runs entirely on your machine by default. Your data stays in a local folder as markdown files, and the SQLite index never leaves your disk. No account or network connection required.",
+  },
+  {
+    question: "Can I move to hosted later?",
+    answer:
+      "Yes. Start local and switch to hosted when you need team access or cross-device retrieval. Your entries are portable markdown files, so migration is straightforward with no format conversion.",
+  },
+  {
+    question: "Will this work with my AI client?",
+    answer:
+      "Context Vault speaks MCP, which is supported by Claude Code, Cursor, Windsurf, and any MCP-compatible client. For tools like ChatGPT, connect via GPT Actions using the hosted API.",
+  },
+];
+
 export function LandingPage() {
   const featured = posts.slice(0, 3);
 
@@ -206,39 +224,56 @@ export function LandingPage() {
 
       <section className="border-y border-border/70 bg-muted/30">
         <div className="mx-auto w-full max-w-6xl px-6 py-14 sm:py-16">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-              Latest from the blog
-            </h2>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/blog">View all</Link>
-            </Button>
-          </div>
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            Frequently asked questions
+          </h2>
           <div className="mt-6 grid gap-4 md:grid-cols-3">
-            {featured.map((post) => (
-              <Card key={post.slug}>
+            {faqs.map((faq) => (
+              <Card key={faq.question}>
                 <CardHeader>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Badge variant="secondary">{post.category}</Badge>
-                    <span>{post.readTimeMinutes} min read</span>
-                  </div>
-                  <CardTitle className="text-base">
-                    <Link to={`/blog/${post.slug}`} className="hover:underline">
-                      {post.title}
-                    </Link>
-                  </CardTitle>
-                  <CardDescription>{post.description}</CardDescription>
+                  <CardTitle className="text-base">{faq.question}</CardTitle>
+                  <CardDescription>{faq.answer}</CardDescription>
                 </CardHeader>
-                <CardFooter>
-                  <Button asChild variant="outline" size="sm" className="w-fit">
-                    <Link to={`/blog/${post.slug}`}>
-                      Read post <ArrowRight className="size-4" />
-                    </Link>
-                  </Button>
-                </CardFooter>
+                <CardFooter />
               </Card>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="mx-auto w-full max-w-6xl px-6 py-14 sm:py-16">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            Latest from the blog
+          </h2>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/blog">View all</Link>
+          </Button>
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          {featured.map((post) => (
+            <Card key={post.slug}>
+              <CardHeader>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Badge variant="secondary">{post.category}</Badge>
+                  <span>{post.readTimeMinutes} min read</span>
+                </div>
+                <CardTitle className="text-base">
+                  <Link to={`/blog/${post.slug}`} className="hover:underline">
+                    {post.title}
+                  </Link>
+                </CardTitle>
+                <CardDescription>{post.description}</CardDescription>
+              </CardHeader>
+              <CardFooter>
+                <Button asChild variant="outline" size="sm" className="w-fit">
+                  <Link to={`/blog/${post.slug}`}>
+                    Read post <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
         </div>
       </section>
 

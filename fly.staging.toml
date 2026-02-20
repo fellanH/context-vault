@@ -4,9 +4,6 @@ primary_region = "fra"
 [build]
   dockerfile = "packages/hosted/Dockerfile"
 
-[build.args]
-  VITE_APP_BASE_URL = "https://context-vault-staging.fly.dev"
-
 [build.context]
   path = "."
 
@@ -14,8 +11,6 @@ primary_region = "fra"
   PORT = "3000"
   AUTH_REQUIRED = "true"
   PUBLIC_URL = "https://context-vault-staging.fly.dev"
-  APP_HOSTS = "context-vault-staging.fly.dev"
-  MARKETING_HOSTS = "context-vault-staging.fly.dev"
   CONTEXT_MCP_DATA_DIR = "/data"
   CONTEXT_MCP_VAULT_DIR = "/data/vault"
   NODE_ENV = "staging"

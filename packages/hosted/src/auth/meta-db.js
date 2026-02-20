@@ -116,6 +116,12 @@ export function initMetaDb(dbPath) {
     metaDb.exec(`ALTER TABLE users ADD COLUMN google_id TEXT`);
     metaDb.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL`);
   }
+  if (!cols.includes("encryption_mode")) {
+    metaDb.exec(`ALTER TABLE users ADD COLUMN encryption_mode TEXT NOT NULL DEFAULT 'legacy'`);
+  }
+  if (!cols.includes("client_key_share_hash")) {
+    metaDb.exec(`ALTER TABLE users ADD COLUMN client_key_share_hash TEXT`);
+  }
 
   return metaDb;
 }
@@ -178,7 +184,8 @@ export function prepareMetaStatements(db) {
 
     // DEK (encryption)
     updateUserDek: db.prepare(`UPDATE users SET encrypted_dek = ?, dek_salt = ?, updated_at = datetime('now') WHERE id = ?`),
-    getUserDekData: db.prepare(`SELECT encrypted_dek, dek_salt FROM users WHERE id = ?`),
+    updateUserDekSplitAuthority: db.prepare(`UPDATE users SET encrypted_dek = ?, dek_salt = ?, encryption_mode = 'split-authority', client_key_share_hash = ?, updated_at = datetime('now') WHERE id = ?`),
+    getUserDekData: db.prepare(`SELECT encrypted_dek, dek_salt, encryption_mode FROM users WHERE id = ?`),
 
     // Account deletion
     deleteUserKeys: db.prepare(`DELETE FROM api_keys WHERE user_id = ?`),

@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# smoke-test.sh — Post-deploy verification for context-vault hosted server.
+# smoke-test.sh — Post-deploy verification for context-vault.
 #
-# Usage: bash scripts/smoke-test.sh [MARKETING_BASE_URL] [APP_BASE_URL]
-#   Default marketing base: https://www.context-vault.com
+# Usage: bash scripts/smoke-test.sh [API_BASE_URL] [APP_BASE_URL] [MARKETING_BASE_URL]
+#   Default API base:       https://api.context-vault.com
 #   Optional app base:      https://app.context-vault.com
+#   Optional marketing base: https://context-vault.com
 
 set -euo pipefail
 
-BASE="${1:-https://www.context-vault.com}"
+API_BASE="${1:-https://api.context-vault.com}"
 APP_BASE="${2:-}"
+MARKETING_BASE="${3:-}"
 PASS=0
 FAIL=0
 
@@ -26,39 +28,24 @@ check() {
   fi
 }
 
-echo "Smoke testing: $BASE"
+echo "Smoke testing API: $API_BASE"
 if [ -n "$APP_BASE" ]; then
-  echo "App base:      $APP_BASE"
+  echo "App base:          $APP_BASE"
+fi
+if [ -n "$MARKETING_BASE" ]; then
+  echo "Marketing base:    $MARKETING_BASE"
 fi
 echo ""
 
-# ─── Basic Endpoints ──────────────────────────────────────────────────────────
+# ─── API Checks ──────────────────────────────────────────────────────────────
 
-# Root app
-check "GET / returns 200" "200" "$BASE/"
-
-# Root HTML shape
-ROOT_BODY=$(curl -s --max-time 5 "$BASE/")
-if echo "$ROOT_BODY" | grep -q '<div id="root"'; then
-  echo "  PASS: / includes root container"
-  ((PASS++)) || true
-else
-  echo "  FAIL: / missing root container"
-  ((FAIL++)) || true
-fi
-
-# Optional app-domain checks
-if [ -n "$APP_BASE" ]; then
-  check "GET app / returns 200" "200" "$APP_BASE/"
-  check "GET app /login returns 200" "200" "$APP_BASE/login"
-  check "GET app /search returns 200" "200" "$APP_BASE/search"
-fi
+echo "── API Checks ──"
 
 # Health check
-check "GET /health returns 200" "200" "$BASE/health"
+check "GET /health returns 200" "200" "$API_BASE/health"
 
 # Health response shape
-HEALTH=$(curl -s --max-time 5 "$BASE/health")
+HEALTH=$(curl -s --max-time 5 "$API_BASE/health")
 if echo "$HEALTH" | grep -q '"status"'; then
   echo "  PASS: /health has status field"
   ((PASS++)) || true
@@ -77,30 +64,30 @@ else
 fi
 
 # Unauthenticated MCP returns 401
-check "POST /mcp without auth returns 401" "401" "$BASE/mcp" \
+check "POST /mcp without auth returns 401" "401" "$API_BASE/mcp" \
   -X POST -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 
 # Registration without email returns 400
-check "POST /api/register without email returns 400" "400" "$BASE/api/register" \
+check "POST /api/register without email returns 400" "400" "$API_BASE/api/register" \
   -X POST -H "Content-Type: application/json" -d '{}'
 
 # OpenAPI schema endpoint
-check "GET /api/vault/openapi.json returns 200" "200" "$BASE/api/vault/openapi.json"
-
-# Privacy policy endpoint
-check "GET /privacy returns 200" "200" "$BASE/privacy"
+check "GET /api/vault/openapi.json returns 200" "200" "$API_BASE/api/vault/openapi.json"
 
 # Management API without auth returns 401
-check "GET /api/keys without auth returns 401" "401" "$BASE/api/keys"
+check "GET /api/keys without auth returns 401" "401" "$API_BASE/api/keys"
 
 # 404 for unknown API routes
-check "GET /api/unknown returns 404" "404" "$BASE/api/unknown"
+check "GET /api/unknown returns 404" "404" "$API_BASE/api/unknown"
 
 # ─── Security Checks ─────────────────────────────────────────────────────────
 
+echo ""
+echo "── Security Checks ──"
+
 # Security headers: X-Content-Type-Options: nosniff
-HEADERS=$(curl -s -I --max-time 5 "$BASE/health")
+HEADERS=$(curl -s -I --max-time 5 "$API_BASE/health")
 if echo "$HEADERS" | grep -qi "x-content-type-options: nosniff"; then
   echo "  PASS: X-Content-Type-Options: nosniff present"
   ((PASS++)) || true
@@ -110,13 +97,51 @@ else
 fi
 
 # CORS check: evil origin should not get Access-Control-Allow-Origin: *
-CORS_HEADERS=$(curl -s -I --max-time 5 -H "Origin: https://evil.com" "$BASE/health")
+CORS_HEADERS=$(curl -s -I --max-time 5 -H "Origin: https://evil.com" "$API_BASE/health")
 if echo "$CORS_HEADERS" | grep -qi "access-control-allow-origin: \*"; then
   echo "  FAIL: CORS allows wildcard origin in production"
   ((FAIL++)) || true
 else
   echo "  PASS: CORS does not allow wildcard origin"
   ((PASS++)) || true
+fi
+
+# ─── App Checks ──────────────────────────────────────────────────────────────
+
+if [ -n "$APP_BASE" ]; then
+  echo ""
+  echo "── App Checks ──"
+  check "GET app / returns 200" "200" "$APP_BASE/"
+  check "GET app /login returns 200" "200" "$APP_BASE/login"
+  check "GET app /search returns 200" "200" "$APP_BASE/search"
+
+  APP_BODY=$(curl -s --max-time 5 "$APP_BASE/")
+  if echo "$APP_BODY" | grep -q '<div id="root"'; then
+    echo "  PASS: app / includes root container"
+    ((PASS++)) || true
+  else
+    echo "  FAIL: app / missing root container"
+    ((FAIL++)) || true
+  fi
+fi
+
+# ─── Marketing Checks ────────────────────────────────────────────────────────
+
+if [ -n "$MARKETING_BASE" ]; then
+  echo ""
+  echo "── Marketing Checks ──"
+  check "GET marketing / returns 200" "200" "$MARKETING_BASE/"
+
+  MARKETING_BODY=$(curl -s --max-time 5 "$MARKETING_BASE/")
+  if echo "$MARKETING_BODY" | grep -q '<div id="root"'; then
+    echo "  PASS: marketing / includes root container"
+    ((PASS++)) || true
+  else
+    echo "  FAIL: marketing / missing root container"
+    ((FAIL++)) || true
+  fi
+
+  check "GET marketing /privacy returns 200" "200" "$MARKETING_BASE/privacy"
 fi
 
 echo ""

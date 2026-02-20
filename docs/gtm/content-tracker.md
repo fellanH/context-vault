@@ -67,7 +67,7 @@ Status values: `idea` → `draft` → `review` → `done` (or `skip`)
 
 | # | Title | Pillar | Status | Published | Channels | Notes |
 |---|-------|--------|--------|-----------|----------|-------|
-| 8 | Designing kinds, tags, and folders for long-term memory quality | Education | idea | — | Blog, X, HN | |
+| 8 | Designing kinds, tags, and folders for long-term memory quality | Education | draft | — | Blog, X, HN, Reddit | Distribution assets ready: X thread, Reddit (r/ClaudeAI, r/LocalLLaMA), HN |
 | 9 | Notes app vs agent memory layer: what's the difference? | Comparison | idea | — | Blog, X, Reddit | |
 
 ### Demo Video

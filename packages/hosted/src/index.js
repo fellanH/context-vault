@@ -4,8 +4,11 @@
  * Hono HTTP server serving MCP over Streamable HTTP transport.
  * Same 6 tools as local mode, shared via registerTools(server, ctx).
  *
- * Stateless per-request model: each request gets a fresh McpServer + transport
- * but shares the same ctx (DB, embeddings, config).
+ * Stateless per-request model: each request gets a fresh McpServer + transport.
+ *
+ * Database isolation modes:
+ *   PER_USER_DB=true  → Each user gets their own vault.db + vault/ directory
+ *   PER_USER_DB=false → Shared vault.db with WHERE user_id filtering (legacy)
  *
  * Auth modes:
  *   AUTH_REQUIRED=true  → MCP endpoint requires Bearer API key (production)
@@ -20,13 +23,12 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
-import { serveStatic } from "@hono/node-server/serve-static";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { join } from "node:path";
-import { writeFileSync, unlinkSync, readFileSync, statfsSync, existsSync } from "node:fs";
+import { writeFileSync, unlinkSync, readFileSync, statfsSync } from "node:fs";
 import { registerTools } from "@context-vault/core/server/tools";
-import { createCtx } from "./server/ctx.js";
+import { createCtx, PER_USER_DB } from "./server/ctx.js";
 import { initMetaDb, prepareMetaStatements, getMetaDb } from "./auth/meta-db.js";
 import { bearerAuth } from "./middleware/auth.js";
 import { rateLimit } from "./middleware/rate-limit.js";
@@ -34,6 +36,7 @@ import { requestLogger } from "./middleware/logger.js";
 import { createManagementRoutes } from "./server/management.js";
 import { createVaultApiRoutes } from "./routes/vault-api.js";
 import { buildUserCtx } from "./server/user-ctx.js";
+import { pool } from "./server/user-db.js";
 import { scheduleBackups, lastBackupTimestamp } from "./backup/r2-backup.js";
 
 // ─── Config ─────────────────────────────────────────────────────────────────
@@ -65,22 +68,25 @@ function validateEnv(config) {
     }
   }
 
-  // Verify vault dir is writable
+  // Verify data dir is writable
   try {
-    const probe = join(config.vaultDir, ".write-test");
+    const probe = join(config.dataDir, ".write-test");
     writeFileSync(probe, "");
     unlinkSync(probe);
   } catch (err) {
-    console.error(`[hosted] \u26a0 Vault dir not writable: ${config.vaultDir} — ${err.message}`);
+    console.error(`[hosted] \u26a0 Data dir not writable: ${config.dataDir} — ${err.message}`);
   }
-
 }
 
 // ─── Shared Context (initialized once at startup) ───────────────────────────
 
 const ctx = await createCtx();
-console.log(`[hosted] Vault: ${ctx.config.vaultDir}`);
-console.log(`[hosted] Database: ${ctx.config.dbPath}`);
+console.log(`[hosted] Mode: ${PER_USER_DB ? "per-user DB isolation" : "shared DB (legacy)"}`);
+if (!PER_USER_DB) {
+  console.log(`[hosted] Vault: ${ctx.config.vaultDir}`);
+  console.log(`[hosted] Database: ${ctx.config.dbPath}`);
+}
+console.log(`[hosted] Data dir: ${ctx.config.dataDir}`);
 
 validateEnv(ctx.config);
 
@@ -107,12 +113,12 @@ const MCP_REQUEST_TIMEOUT_MS = 60_000;
 
 // ─── Factory: create MCP server per request ─────────────────────────────────
 
-function createMcpServer(user) {
+async function createMcpServer(user) {
   const server = new McpServer(
     { name: "context-vault-hosted", version: "0.1.0" },
     { capabilities: { tools: {} } }
   );
-  const userCtx = buildUserCtx(ctx, user, VAULT_MASTER_SECRET);
+  const userCtx = await buildUserCtx(ctx, user, VAULT_MASTER_SECRET);
   registerTools(server, userCtx);
   return server;
 }
@@ -163,7 +169,7 @@ if (AUTH_REQUIRED && !process.env.CORS_ORIGIN) {
 app.use("*", cors({
   origin: corsOrigin,
   allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowHeaders: ["Content-Type", "Authorization", "mcp-session-id", "Last-Event-ID", "mcp-protocol-version"],
+  allowHeaders: ["Content-Type", "Authorization", "X-Vault-Secret", "mcp-session-id", "Last-Event-ID", "mcp-protocol-version"],
   exposeHeaders: ["mcp-session-id", "mcp-protocol-version", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 }));
 
@@ -173,12 +179,19 @@ app.get("/health", (c) => {
     status: "ok",
     version: pkgVersion,
     auth: AUTH_REQUIRED,
+    perUserDb: PER_USER_DB,
     region: process.env.FLY_REGION || "local",
     machine: process.env.FLY_MACHINE_ID || "local",
   };
 
-  try { ctx.db.prepare("SELECT 1").get(); checks.vault_db = "ok"; }
-  catch { checks.vault_db = "error"; checks.status = "degraded"; }
+  if (PER_USER_DB) {
+    checks.user_db_pool = pool.size;
+    checks.vault_db = "per-user";
+  } else {
+    try { ctx.db.prepare("SELECT 1").get(); checks.vault_db = "ok"; }
+    catch { checks.vault_db = "error"; checks.status = "degraded"; }
+  }
+
   try { getMetaDb().prepare("SELECT 1").get(); checks.meta_db = "ok"; }
   catch { checks.meta_db = "error"; checks.status = "degraded"; }
 
@@ -213,7 +226,7 @@ async function handleMcpRequest(c, user) {
   let timer;
   try {
     const transport = new WebStandardStreamableHTTPServerTransport();
-    const server = createMcpServer(user);
+    const server = await createMcpServer(user);
     await server.connect(transport);
     return await Promise.race([
       transport.handleRequest(c.req.raw),
@@ -250,32 +263,8 @@ if (AUTH_REQUIRED) {
   });
 }
 
-// ─── Static Frontend Serving ─────────────────────────────────────────────────
-
-// Host-based frontend serving:
-// - marketing hosts (for example www.context-vault.com) -> packages/marketing/dist
-// - app hosts (for example app.context-vault.com) -> packages/app/dist
-// API and MCP routes remain on this same server and always win by order.
-app.use("/*", (c, next) => {
-  const path = c.req.path;
-  if (path.startsWith("/api/") || path.startsWith("/mcp") || path === "/health") {
-    return next();
-  }
-  const { root } = getFrontendAssetPaths(c);
-  return serveStatic({ root })(c, next);
-});
-
-// SPA fallback: serve selected frontend index.html for non-API/MCP routes.
-app.get("*", (c, next) => {
-  const path = c.req.path;
-  if (path.startsWith("/api/") || path.startsWith("/mcp") || path === "/health") {
-    return next();
-  }
-  const { frontend, indexPath } = getFrontendAssetPaths(c);
-  const redirect = maybeRedirectToAppHost(c, frontend);
-  if (redirect) return redirect;
-  return serveStatic({ path: indexPath })(c, next);
-});
+// Redirect root to marketing site (frontends served by Vercel)
+app.get("/", (c) => c.redirect("https://context-vault.com", 302));
 
 // ─── Start Server ───────────────────────────────────────────────────────────
 
@@ -295,10 +284,14 @@ function shutdown(signal) {
   shuttingDown = true;
   console.log(`[hosted] ${signal} received, draining...`);
   httpServer.close(() => {
-    // WAL checkpoint before closing to ensure all data is flushed
-    try { ctx.db.pragma("wal_checkpoint(TRUNCATE)"); } catch {}
+    // Close per-user DB pool
+    try { pool.closeAll(); } catch {}
+    // WAL checkpoint + close shared DB (legacy mode)
+    if (!PER_USER_DB && ctx.db) {
+      try { ctx.db.pragma("wal_checkpoint(TRUNCATE)"); } catch {}
+      try { ctx.db.close(); } catch {}
+    }
     try { getMetaDb().pragma("wal_checkpoint(TRUNCATE)"); } catch {}
-    try { ctx.db.close(); } catch {}
     try { getMetaDb().close(); } catch {}
     process.exit(0);
   });

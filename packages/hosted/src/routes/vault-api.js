@@ -11,6 +11,9 @@
  *   GET    /api/vault/status           Vault diagnostics + usage stats
  *
  * All endpoints require Authorization: Bearer cv_... and return JSON.
+ *
+ * In per-user DB mode (PER_USER_DB=true), each user's queries hit their own
+ * isolated database. The WHERE user_id clauses are kept as defense-in-depth.
  */
 
 import { Hono } from "hono";
@@ -71,7 +74,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
   // ─── OpenAPI spec (unauthenticated, public) ────────────────────────────────
 
   api.get("/api/vault/openapi.json", (c) => {
-    const serverUrl = process.env.PUBLIC_URL || null;
+    const serverUrl = process.env.API_URL || process.env.PUBLIC_URL || null;
     const version = ctx.config?.version || "1.0.0";
     const spec = generateOpenApiSpec({ version, serverUrl });
     return c.json(spec);
@@ -98,10 +101,10 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
   // ─── GET /api/vault/entries — List/browse with filters + pagination ────────
 
-  api.get("/api/vault/entries", (c) => {
+  api.get("/api/vault/entries", async (c) => {
     const user = c.get("user");
     const teamId = c.req.query("team_id") || null;
-    const userCtx = buildUserCtx(ctx, user, masterSecret, teamId ? { teamId } : null);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret, teamId ? { teamId } : null);
 
     const kind = c.req.query("kind") || null;
     const category = c.req.query("category") || null;
@@ -118,6 +121,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
       clauses.push("team_id = ?");
       params.push(userCtx.teamId);
     } else if (userCtx.userId) {
+      // Defense-in-depth: still filter by user_id even in per-user DB mode
       clauses.push("user_id = ?");
       params.push(userCtx.userId);
     }
@@ -141,8 +145,8 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
-    const total = ctx.db.prepare(`SELECT COUNT(*) as c FROM vault ${where}`).get(...params).c;
-    const rows = ctx.db.prepare(
+    const total = userCtx.db.prepare(`SELECT COUNT(*) as c FROM vault ${where}`).get(...params).c;
+    const rows = userCtx.db.prepare(
       `SELECT * FROM vault ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
     ).all(...params, limit, offset);
 
@@ -153,16 +157,16 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
   // ─── GET /api/vault/entries/:id — Get single entry by ULID ─────────────────
 
-  api.get("/api/vault/entries/:id", (c) => {
+  api.get("/api/vault/entries/:id", async (c) => {
     const user = c.get("user");
-    const userCtx = buildUserCtx(ctx, user, masterSecret);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret);
     const id = c.req.param("id");
 
-    const entry = ctx.stmts.getEntryById.get(id);
+    const entry = userCtx.stmts.getEntryById.get(id);
     if (!entry) return c.json({ error: "Entry not found", code: "NOT_FOUND" }, 404);
 
-    // Ownership check
-    if (userCtx.userId && entry.user_id !== userCtx.userId) {
+    // Ownership check (defense-in-depth in per-user DB mode)
+    if (userCtx.userId && entry.user_id && entry.user_id !== userCtx.userId) {
       return c.json({ error: "Entry not found", code: "NOT_FOUND" }, 404);
     }
 
@@ -173,7 +177,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
   api.post("/api/vault/entries", async (c) => {
     const user = c.get("user");
-    const userCtx = buildUserCtx(ctx, user, masterSecret);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret);
 
     const data = await c.req.json().catch(() => null);
     if (!data) return c.json({ error: "Invalid JSON body", code: "INVALID_INPUT" }, 400);
@@ -190,7 +194,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
     // Entry limit enforcement
     if (userCtx.userId) {
-      const { c: entryCount } = ctx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ?").get(userCtx.userId);
+      const { c: entryCount } = userCtx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ? OR user_id IS NULL").get(userCtx.userId);
       if (isOverEntryLimit(user.tier, entryCount)) {
         return c.json({ error: "Entry limit reached. Upgrade to Pro.", code: "LIMIT_EXCEEDED" }, 403);
       }
@@ -214,7 +218,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
         indexEntry
       );
 
-      return c.json(formatEntry(ctx.stmts.getEntryById.get(entry.id), userCtx.decrypt), 201);
+      return c.json(formatEntry(userCtx.stmts.getEntryById.get(entry.id), userCtx.decrypt), 201);
     } catch (err) {
       console.error(`[vault-api] Create entry error: ${err.message}`);
       return c.json({ error: "Failed to create entry", code: "CREATE_FAILED" }, 500);
@@ -225,7 +229,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
   api.put("/api/vault/entries/:id", async (c) => {
     const user = c.get("user");
-    const userCtx = buildUserCtx(ctx, user, masterSecret);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret);
     const id = c.req.param("id");
 
     const data = await c.req.json().catch(() => null);
@@ -236,11 +240,11 @@ export function createVaultApiRoutes(ctx, masterSecret) {
       return c.json({ error: validationError.error, code: "INVALID_INPUT" }, validationError.status);
     }
 
-    const existing = ctx.stmts.getEntryById.get(id);
+    const existing = userCtx.stmts.getEntryById.get(id);
     if (!existing) return c.json({ error: "Entry not found", code: "NOT_FOUND" }, 404);
 
     // Ownership check
-    if (userCtx.userId && existing.user_id !== userCtx.userId) {
+    if (userCtx.userId && existing.user_id && existing.user_id !== userCtx.userId) {
       return c.json({ error: "Entry not found", code: "NOT_FOUND" }, 404);
     }
 
@@ -271,7 +275,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
       });
       await indexEntry(userCtx, entry);
 
-      return c.json(formatEntry(ctx.stmts.getEntryById.get(id), userCtx.decrypt));
+      return c.json(formatEntry(userCtx.stmts.getEntryById.get(id), userCtx.decrypt));
     } catch (err) {
       console.error(`[vault-api] Update entry error: ${err.message}`);
       return c.json({ error: "Failed to update entry", code: "UPDATE_FAILED" }, 500);
@@ -280,16 +284,16 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
   // ─── DELETE /api/vault/entries/:id — Delete entry + file + vector ──────────
 
-  api.delete("/api/vault/entries/:id", (c) => {
+  api.delete("/api/vault/entries/:id", async (c) => {
     const user = c.get("user");
-    const userCtx = buildUserCtx(ctx, user, masterSecret);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret);
     const id = c.req.param("id");
 
-    const entry = ctx.stmts.getEntryById.get(id);
+    const entry = userCtx.stmts.getEntryById.get(id);
     if (!entry) return c.json({ error: "Entry not found", code: "NOT_FOUND" }, 404);
 
     // Ownership check
-    if (userCtx.userId && entry.user_id !== userCtx.userId) {
+    if (userCtx.userId && entry.user_id && entry.user_id !== userCtx.userId) {
       return c.json({ error: "Entry not found", code: "NOT_FOUND" }, 404);
     }
 
@@ -299,13 +303,13 @@ export function createVaultApiRoutes(ctx, masterSecret) {
     }
 
     // Delete vector embedding
-    const rowidResult = ctx.stmts.getRowid.get(id);
+    const rowidResult = userCtx.stmts.getRowid.get(id);
     if (rowidResult?.rowid) {
-      try { ctx.deleteVec(Number(rowidResult.rowid)); } catch {}
+      try { userCtx.deleteVec(Number(rowidResult.rowid)); } catch {}
     }
 
     // Delete DB row (FTS trigger handles FTS cleanup)
-    ctx.stmts.deleteEntry.run(id);
+    userCtx.stmts.deleteEntry.run(id);
 
     return c.json({ deleted: true, id, kind: entry.kind, title: entry.title || null });
   });
@@ -314,7 +318,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
   api.post("/api/vault/search", async (c) => {
     const user = c.get("user");
-    const userCtx = buildUserCtx(ctx, user, masterSecret);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret);
 
     const data = await c.req.json().catch(() => null);
     if (!data) return c.json({ error: "Invalid JSON body", code: "INVALID_INPUT" }, 400);
@@ -331,7 +335,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
         until: data.until || null,
         limit,
         offset,
-        decayDays: ctx.config.eventDecayDays || 30,
+        decayDays: userCtx.config.eventDecayDays || 30,
         userIdFilter: data.team_id ? null : userCtx.userId,
         teamIdFilter: data.team_id || null,
       });
@@ -354,7 +358,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
   api.post("/api/vault/import/bulk", bearerAuth(), rateLimit(), async (c) => {
     const user = c.get("user");
-    const userCtx = buildUserCtx(ctx, user, masterSecret);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret);
 
     const data = await c.req.json().catch(() => null);
     if (!data || !Array.isArray(data.entries)) {
@@ -367,7 +371,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
     // Entry limit enforcement
     if (userCtx.userId) {
-      const { c: entryCount } = ctx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ?").get(userCtx.userId);
+      const { c: entryCount } = userCtx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ? OR user_id IS NULL").get(userCtx.userId);
       const remaining = isOverEntryLimit(user.tier, entryCount) ? 0 : (user.tier === "free" ? 100 - entryCount : Infinity);
       if (remaining <= 0) {
         return c.json({ error: "Entry limit reached. Upgrade to Pro.", code: "LIMIT_EXCEEDED" }, 403);
@@ -414,18 +418,18 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
   // ─── GET /api/vault/export — Export all entries ─────────────────────────────
 
-  api.get("/api/vault/export", bearerAuth(), rateLimit(), (c) => {
+  api.get("/api/vault/export", bearerAuth(), rateLimit(), async (c) => {
     const user = c.get("user");
-    const userCtx = buildUserCtx(ctx, user, masterSecret);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret);
 
     const clauses = ["(expires_at IS NULL OR expires_at > datetime('now'))"];
     const params = [];
     if (userCtx.userId) {
-      clauses.push("user_id = ?");
+      clauses.push("(user_id = ? OR user_id IS NULL)");
       params.push(userCtx.userId);
     }
     const where = `WHERE ${clauses.join(" AND ")}`;
-    const rows = ctx.db.prepare(`SELECT * FROM vault ${where} ORDER BY created_at DESC`).all(...params);
+    const rows = userCtx.db.prepare(`SELECT * FROM vault ${where} ORDER BY created_at DESC`).all(...params);
     const entries = rows.map((row) => formatEntry(row, userCtx.decrypt));
 
     return c.json({ entries, total: entries.length, exported_at: new Date().toISOString() });
@@ -435,7 +439,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
   api.post("/api/vault/ingest", bearerAuth(), rateLimit(), async (c) => {
     const user = c.get("user");
-    const userCtx = buildUserCtx(ctx, user, masterSecret);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret);
 
     const data = await c.req.json().catch(() => null);
     if (!data?.url) return c.json({ error: "url is required", code: "INVALID_INPUT" }, 400);
@@ -448,7 +452,7 @@ export function createVaultApiRoutes(ctx, masterSecret) {
         { ...entry, userId: userCtx.userId },
         indexEntry
       );
-      return c.json(formatEntry(ctx.stmts.getEntryById.get(result.id), userCtx.decrypt), 201);
+      return c.json(formatEntry(userCtx.stmts.getEntryById.get(result.id), userCtx.decrypt), 201);
     } catch (err) {
       return c.json({ error: `Ingestion failed: ${err.message}`, code: "INGEST_FAILED" }, 500);
     }
@@ -456,26 +460,26 @@ export function createVaultApiRoutes(ctx, masterSecret) {
 
   // ─── GET /api/vault/manifest — Lightweight entry list for sync ────────────
 
-  api.get("/api/vault/manifest", bearerAuth(), rateLimit(), (c) => {
+  api.get("/api/vault/manifest", bearerAuth(), rateLimit(), async (c) => {
     const user = c.get("user");
-    const userCtx = buildUserCtx(ctx, user, masterSecret);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret);
 
     const clauses = ["(expires_at IS NULL OR expires_at > datetime('now'))"];
     const params = [];
     if (userCtx.userId) {
-      clauses.push("user_id = ?");
+      clauses.push("(user_id = ? OR user_id IS NULL)");
       params.push(userCtx.userId);
     }
     const where = `WHERE ${clauses.join(" AND ")}`;
-    const rows = ctx.db.prepare(`SELECT id, kind, title, created_at FROM vault ${where} ORDER BY created_at DESC`).all(...params);
+    const rows = userCtx.db.prepare(`SELECT id, kind, title, created_at FROM vault ${where} ORDER BY created_at DESC`).all(...params);
     return c.json({ entries: rows.map((r) => ({ id: r.id, kind: r.kind, title: r.title || null, created_at: r.created_at })) });
   });
 
   // ─── GET /api/vault/status — Vault diagnostics + usage stats ───────────────
 
-  api.get("/api/vault/status", (c) => {
+  api.get("/api/vault/status", async (c) => {
     const user = c.get("user");
-    const userCtx = buildUserCtx(ctx, user, masterSecret);
+    const userCtx = await buildUserCtx(ctx, user, masterSecret);
 
     const status = gatherVaultStatus(userCtx, { userId: userCtx.userId });
 

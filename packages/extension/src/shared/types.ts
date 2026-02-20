@@ -53,6 +53,7 @@ export interface ExtensionSettings {
   apiKey: string;
   mode: VaultMode;
   vaultPath: string;
+  encryptionSecret?: string;
 }
 
 /** Default settings */

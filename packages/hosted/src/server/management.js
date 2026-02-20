@@ -6,7 +6,8 @@
  */
 
 import { Hono } from "hono";
-import { randomUUID, randomBytes } from "node:crypto";
+import { randomUUID, randomBytes, createHash } from "node:crypto";
+import { rmSync } from "node:fs";
 import {
   generateApiKey,
   hashApiKey,
@@ -19,10 +20,13 @@ import { isGoogleOAuthConfigured, getAuthUrl, exchangeCode, getRedirectUri } fro
 import { createCheckoutSession, verifyWebhookEvent, getStripe, getTierLimits, isOverEntryLimit } from "../billing/stripe.js";
 import { writeEntry } from "@context-vault/core/capture";
 import { indexEntry } from "@context-vault/core/index";
-import { generateDek, clearDekCache } from "../encryption/keys.js";
+import { generateDek, generateDekSplitAuthority, clearDekCache } from "../encryption/keys.js";
 import { decryptFromStorage } from "../encryption/vault-crypto.js";
 import { unlinkSync } from "node:fs";
 import { validateEntryInput } from "../validation/entry-validation.js";
+import { buildUserCtx } from "./user-ctx.js";
+import { PER_USER_DB } from "./ctx.js";
+import { pool, getUserDir } from "./user-db.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -75,6 +79,8 @@ export function _resetRateLimits() {
 export function createManagementRoutes(ctx) {
   const api = new Hono();
 
+  const VAULT_MASTER_SECRET = process.env.VAULT_MASTER_SECRET || null;
+
   // ─── Auth helper for management routes ──────────────────────────────────────
 
   function requireAuth(c) {
@@ -99,6 +105,7 @@ export function createManagementRoutes(ctx) {
       email: row.email,
       name: row.name || null,
       tier: row.tier,
+      encryptionMode: row.encryption_mode || "legacy",
       createdAt: row.created_at,
     });
   });
@@ -237,6 +244,7 @@ export function createManagementRoutes(ctx) {
     }
 
     let apiKeyRaw;
+    let encryptionSecret = null;
 
     if (existingUser) {
       // Link google_id if user was matched by email (first Google sign-in for email-registered user)
@@ -262,7 +270,7 @@ export function createManagementRoutes(ctx) {
       const keyId = randomUUID();
       stmts.createApiKey.run(keyId, existingUser.id, hash, prefix, keys.length > 0 ? "google-oauth" : "default");
     } else {
-      // New user — create account with google_id
+      // New user — create account with google_id + split-authority encryption
       const userId = randomUUID();
       apiKeyRaw = generateApiKey();
       const hash = hashApiKey(apiKeyRaw);
@@ -272,8 +280,10 @@ export function createManagementRoutes(ctx) {
       const registerUser = getMetaDb().transaction(() => {
         stmts.createUserWithGoogle.run(userId, profile.email, profile.name, "free", profile.googleId);
         if (masterSecret) {
-          const { encryptedDek, dekSalt } = generateDek(masterSecret);
-          stmts.updateUserDek.run(encryptedDek, dekSalt, userId);
+          const { encryptedDek, dekSalt, clientKeyShare } = generateDekSplitAuthority(masterSecret);
+          encryptionSecret = clientKeyShare;
+          const shareHash = createHash("sha256").update(clientKeyShare).digest("hex");
+          stmts.updateUserDekSplitAuthority.run(encryptedDek, dekSalt, shareHash, userId);
         }
         stmts.createApiKey.run(keyId, userId, hash, prefix, "default");
       });
@@ -293,7 +303,11 @@ export function createManagementRoutes(ctx) {
     }
 
     // Redirect to app with the API key as a token (one-time, via URL fragment)
-    return c.redirect(`${appUrl}/auth/callback#token=${apiKeyRaw}`);
+    // Include encryption secret for new users
+    const fragment = encryptionSecret
+      ? `token=${apiKeyRaw}&encryption_secret=${encryptionSecret}`
+      : `token=${apiKeyRaw}`;
+    return c.redirect(`${appUrl}/auth/callback#${fragment}`);
   });
 
   // ─── User Registration (email — legacy, kept for backwards compat) ────────
@@ -325,13 +339,17 @@ export function createManagementRoutes(ctx) {
     const keyId = randomUUID();
     const masterSecret = process.env.VAULT_MASTER_SECRET;
 
+    let encryptionSecret = null;
+
     // Wrap all inserts in a transaction to prevent broken user state
-    // (e.g. user created without DEK or API key if a step fails mid-way)
     const registerUser = getMetaDb().transaction(() => {
       stmts.createUser.run(userId, email, name || null, "free");
       if (masterSecret) {
-        const { encryptedDek, dekSalt } = generateDek(masterSecret);
-        stmts.updateUserDek.run(encryptedDek, dekSalt, userId);
+        // Use split-authority encryption for new users
+        const { encryptedDek, dekSalt, clientKeyShare } = generateDekSplitAuthority(masterSecret);
+        encryptionSecret = clientKeyShare;
+        const shareHash = createHash("sha256").update(clientKeyShare).digest("hex");
+        stmts.updateUserDekSplitAuthority.run(encryptedDek, dekSalt, shareHash, userId);
       }
       stmts.createApiKey.run(keyId, userId, hash, prefix, "default");
     });
@@ -349,7 +367,7 @@ export function createManagementRoutes(ctx) {
       return c.json({ error: "Registration failed. Please try again." }, 500);
     }
 
-    return c.json({
+    const response = {
       userId,
       email,
       tier: "free",
@@ -359,12 +377,20 @@ export function createManagementRoutes(ctx) {
         prefix,
         message: "Save this key — it will not be shown again.",
       },
-    }, 201);
+    };
+
+    // Include encryption secret for split-authority users
+    if (encryptionSecret) {
+      response.encryptionSecret = encryptionSecret;
+      response.encryptionWarning = "Save your encryption secret. It cannot be recovered if lost.";
+    }
+
+    return c.json(response, 201);
   });
 
   // ─── Billing ───────────────────────────────────────────────────────────────
 
-  api.get("/api/billing/usage", (c) => {
+  api.get("/api/billing/usage", async (c) => {
     const user = requireAuth(c);
     if (!user) return c.json({ error: "Unauthorized" }, 401);
 
@@ -372,9 +398,11 @@ export function createManagementRoutes(ctx) {
     const requestsToday = stmts.countUsageToday.get(user.userId, "mcp_request");
     const limits = getTierLimits(user.tier);
 
-    const entryCount = ctx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ?").get(user.userId).c;
-    const storageBytes = ctx.db.prepare(
-      "SELECT COALESCE(SUM(LENGTH(COALESCE(body,'')) + LENGTH(COALESCE(body_encrypted,'')) + LENGTH(COALESCE(title,'')) + LENGTH(COALESCE(meta,''))), 0) as s FROM vault WHERE user_id = ?"
+    const userCtx = await buildUserCtx(ctx, user, VAULT_MASTER_SECRET);
+
+    const entryCount = userCtx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ? OR user_id IS NULL").get(user.userId).c;
+    const storageBytes = userCtx.db.prepare(
+      "SELECT COALESCE(SUM(LENGTH(COALESCE(body,'')) + LENGTH(COALESCE(body_encrypted,'')) + LENGTH(COALESCE(title,'')) + LENGTH(COALESCE(meta,''))), 0) as s FROM vault WHERE user_id = ? OR user_id IS NULL"
     ).get(user.userId).s;
 
     return c.json({
@@ -699,7 +727,7 @@ export function createManagementRoutes(ctx) {
   });
 
   /** Get team usage stats */
-  api.get("/api/teams/:id/usage", (c) => {
+  api.get("/api/teams/:id/usage", async (c) => {
     const user = requireAuth(c);
     if (!user) return c.json({ error: "Unauthorized" }, 401);
 
@@ -714,9 +742,10 @@ export function createManagementRoutes(ctx) {
 
     const memberCount = stmts.countTeamMembers.get(teamId).c;
 
-    // Count vault entries scoped to team
-    const entryCount = ctx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE team_id = ?").get(teamId).c;
-    const storageBytes = ctx.db.prepare(
+    // Count vault entries scoped to team — use user's own DB in per-user mode
+    const userCtx = await buildUserCtx(ctx, user, VAULT_MASTER_SECRET);
+    const entryCount = userCtx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE team_id = ?").get(teamId).c;
+    const storageBytes = userCtx.db.prepare(
       "SELECT COALESCE(SUM(LENGTH(COALESCE(body,'')) + LENGTH(COALESCE(body_encrypted,'')) + LENGTH(COALESCE(title,'')) + LENGTH(COALESCE(meta,''))), 0) as s FROM vault WHERE team_id = ?"
     ).get(teamId).s;
 
@@ -755,13 +784,24 @@ export function createManagementRoutes(ctx) {
       }
     }
 
-    // 2. Delete vault entries (files + DB + vectors)
-    const entries = ctx.db.prepare("SELECT id, file_path FROM vault WHERE user_id = ?").all(user.userId);
-    for (const entry of entries) {
-      if (entry.file_path) try { unlinkSync(entry.file_path); } catch {}
-      try { ctx.deleteVec(entry.id); } catch {}
+    // 2. Delete vault entries
+    if (PER_USER_DB) {
+      // Per-user mode: evict from pool and delete entire user directory
+      pool.evict(user.userId);
+      try {
+        rmSync(getUserDir(user.userId), { recursive: true, force: true });
+      } catch (err) {
+        console.error(`[management] Failed to delete user dir: ${err.message}`);
+      }
+    } else {
+      // Legacy mode: delete entries row by row
+      const entries = ctx.db.prepare("SELECT id, file_path FROM vault WHERE user_id = ?").all(user.userId);
+      for (const entry of entries) {
+        if (entry.file_path) try { unlinkSync(entry.file_path); } catch {}
+        try { ctx.deleteVec(entry.id); } catch {}
+      }
+      ctx.db.prepare("DELETE FROM vault WHERE user_id = ?").run(user.userId);
     }
-    ctx.db.prepare("DELETE FROM vault WHERE user_id = ?").run(user.userId);
 
     // 3. Delete meta records in transaction
     const stmts = prepareMetaStatements(getMetaDb());
@@ -785,6 +825,8 @@ export function createManagementRoutes(ctx) {
     const user = requireAuth(c);
     if (!user) return c.json({ error: "Unauthorized" }, 401);
 
+    const userCtx = await buildUserCtx(ctx, user, VAULT_MASTER_SECRET);
+
     const data = await c.req.json().catch(() => null);
     if (!data) return c.json({ error: "Invalid JSON body" }, 400);
 
@@ -792,12 +834,12 @@ export function createManagementRoutes(ctx) {
     if (validationError) return c.json({ error: validationError.error }, validationError.status);
 
     // ── Entry limit enforcement (per-user) ─────────────────────────────────
-    const { c: entryCount } = ctx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ?").get(user.userId);
+    const { c: entryCount } = userCtx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ? OR user_id IS NULL").get(user.userId);
     if (isOverEntryLimit(user.tier, entryCount)) {
       return c.json({ error: "Entry limit reached. Upgrade to Pro." }, 403);
     }
 
-    const entry = writeEntry(ctx, {
+    const entry = writeEntry(userCtx, {
       kind: data.kind,
       title: data.title,
       body: data.body,
@@ -809,13 +851,13 @@ export function createManagementRoutes(ctx) {
       userId: user.userId,
     });
 
-    await indexEntry(ctx, entry);
+    await indexEntry(userCtx, entry);
 
     return c.json({ id: entry.id });
   });
 
   /** Export all vault entries */
-  api.get("/api/vault/export", (c) => {
+  api.get("/api/vault/export", async (c) => {
     const user = requireAuth(c);
     if (!user) return c.json({ error: "Unauthorized" }, 401);
 
@@ -824,17 +866,20 @@ export function createManagementRoutes(ctx) {
       return c.json({ error: "Export is not available on the free tier. Upgrade to Pro." }, 403);
     }
 
-    const rows = ctx.db.prepare(
-      `SELECT id, kind, title, body, tags, source, created_at, identity_key, expires_at, meta, body_encrypted, title_encrypted, meta_encrypted, iv FROM vault WHERE user_id = ? ORDER BY created_at ASC`
+    const userCtx = await buildUserCtx(ctx, user, VAULT_MASTER_SECRET);
+
+    const rows = userCtx.db.prepare(
+      `SELECT id, kind, title, body, tags, source, created_at, identity_key, expires_at, meta, body_encrypted, title_encrypted, meta_encrypted, iv FROM vault WHERE user_id = ? OR user_id IS NULL ORDER BY created_at ASC`
     ).all(user.userId);
 
     const masterSecret = process.env.VAULT_MASTER_SECRET;
+    const clientKeyShare = user.clientKeyShare || null;
     const entries = rows.map((row) => {
       let { title, body, meta } = row;
 
       // Decrypt encrypted entries for export
       if (masterSecret && row.body_encrypted) {
-        const decrypted = decryptFromStorage(row, user.userId, masterSecret);
+        const decrypted = decryptFromStorage(row, user.userId, masterSecret, clientKeyShare);
         body = decrypted.body;
         if (decrypted.title) title = decrypted.title;
         meta = decrypted.meta ? JSON.stringify(decrypted.meta) : row.meta;

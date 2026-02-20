@@ -1,4 +1,5 @@
 {
+  "outputDirectory": "dist",
   "rewrites": [
     { "source": "/mcp", "destination": "https://api.context-vault.com/mcp" },
     { "source": "/api/:path*", "destination": "https://api.context-vault.com/api/:path*" },

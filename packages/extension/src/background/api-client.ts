@@ -13,11 +13,13 @@ let cachedSettings: ExtensionSettings | null = null;
 
 async function getSettings(): Promise<ExtensionSettings> {
   if (cachedSettings) return cachedSettings;
-  const result = await chrome.storage.local.get(["serverUrl", "apiKey", "mode"]);
+  const result = await chrome.storage.local.get(["serverUrl", "apiKey", "mode", "encryptionSecret"]);
   cachedSettings = {
     serverUrl: result.serverUrl || "",
     apiKey: result.apiKey || "",
     mode: result.mode || "hosted",
+    vaultPath: result.vaultPath || "",
+    encryptionSecret: result.encryptionSecret || "",
   };
   return cachedSettings;
 }
@@ -88,6 +90,12 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   // Only include auth header when apiKey is set
   if (apiKey) {
     headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  // Include encryption secret for split-authority decryption
+  const { encryptionSecret } = await getSettings();
+  if (encryptionSecret) {
+    headers["X-Vault-Secret"] = encryptionSecret;
   }
 
   let lastError: Error | undefined;

@@ -2,6 +2,25 @@ import { getStoredToken, clearStoredToken } from "./auth";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "/api";
 
+/** Get stored encryption secret for split-authority encryption. */
+function getStoredEncryptionSecret(): string | null {
+  try {
+    return localStorage.getItem("cv_encryption_secret");
+  } catch {
+    return null;
+  }
+}
+
+/** Store encryption secret in localStorage. */
+export function setStoredEncryptionSecret(secret: string): void {
+  localStorage.setItem("cv_encryption_secret", secret);
+}
+
+/** Clear stored encryption secret. */
+export function clearStoredEncryptionSecret(): void {
+  localStorage.removeItem("cv_encryption_secret");
+}
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -30,6 +49,12 @@ async function request<T>(
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  // Include encryption secret for split-authority decryption
+  const encryptionSecret = getStoredEncryptionSecret();
+  if (encryptionSecret) {
+    headers["X-Vault-Secret"] = encryptionSecret;
   }
 
   const res = await fetch(`${BASE_URL}${path}`, {

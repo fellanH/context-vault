@@ -1,22 +1,3 @@
-FROM node:20-slim AS builder
-
-WORKDIR /app
-
-COPY package*.json ./
-COPY packages/core/ packages/core/
-COPY packages/app/ packages/app/
-COPY packages/marketing/ packages/marketing/
-COPY packages/hosted/ packages/hosted/
-
-ARG VITE_APP_BASE_URL=https://app.context-vault.com
-ENV VITE_APP_BASE_URL=${VITE_APP_BASE_URL}
-
-RUN npm install --workspace=packages/app --workspace=packages/marketing --workspace=packages/hosted
-RUN npm run build --workspace=packages/app
-RUN npm run build --workspace=packages/marketing
-
-# ─── Production image ────────────────────────────────────────────────────────
-
 FROM node:20-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
@@ -30,11 +11,7 @@ COPY packages/core/ packages/core/
 COPY packages/hosted/ packages/hosted/
 RUN npm install --workspace=packages/hosted --omit=dev
 
-# Copy built frontend from builder stage
-COPY --from=builder /app/packages/app/dist/ packages/app/dist/
-COPY --from=builder /app/packages/marketing/dist/ packages/marketing/dist/
-
-RUN mkdir -p /data && chown vault:vault /data
+RUN mkdir -p /data /data/users && chown -R vault:vault /data
 
 USER vault
 

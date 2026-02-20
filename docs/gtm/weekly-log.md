@@ -27,6 +27,7 @@ Execution journal and scorecard. Newest week on top. Fill every Friday.
 - [ ] Blog #7: How solo founders prevent context loss across sessions
 - [ ] Video #2: Hosted MCP endpoint setup
 - [ ] BIP #2: Blog traffic and first signups
+- [ ] Blog #8: Designing kinds, tags, and folders for long-term memory quality (draft ready, distribution assets prepared — X thread, Reddit, HN)
 
 ### Distribution Shipped
 
@@ -37,15 +38,15 @@ Execution journal and scorecard. Newest week on top. Fill every Friday.
 
 ### Pipeline Activity
 
-- New conversations this week:
-- Conversations → activated:
-- Activated → asked:
-- Asked → converted:
-- Contacts parked:
-- Contacts lost:
-- Total active pipeline:
-- Top source this week:
-- Key insight:
+- New conversations this week: 0
+- Conversations → activated: 0
+- Activated → asked: 0
+- Asked → converted: 0
+- Contacts parked: 0
+- Contacts lost: 0
+- Total active pipeline: 0
+- Top source this week: —
+- Key insight: No outreach sent yet. Week 5 focused on preparing distribution assets (Campaign A drafts, outreach templates, blog #8 distribution package). Outreach templates for Claude Code, Cursor, and GitHub stargazer personas created and ready for Week 6 manual sends. This is the honest baseline — pipeline starts from zero.
 
 ### What Worked
 

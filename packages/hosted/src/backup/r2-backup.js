@@ -1,17 +1,29 @@
 /**
  * r2-backup.js — Automated SQLite backup to Cloudflare R2.
  *
- * Periodically backs up vault.db and meta.db to R2.
+ * Supports two modes:
+ *   - Legacy (PER_USER_DB=false): backs up shared vault.db + meta.db
+ *   - Per-user (PER_USER_DB=true): backs up meta.db + each user's vault.db
+ *
+ * R2 key structure:
+ *   backups/{date}/meta-{timestamp}.db
+ *   backups/{date}/users/{userId}/vault-{timestamp}.db   (per-user mode)
+ *   backups/{date}/vault-{timestamp}.db                  (legacy mode)
+ *
  * Prunes backups older than 30 days.
  */
 
-import { readFileSync, writeFileSync, renameSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from "@aws-sdk/client-s3";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { readFileSync, writeFileSync, renameSync, readdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { PER_USER_DB } from "../server/ctx.js";
+import { pool } from "../server/user-db.js";
 
 /** Timestamp of last successful backup (exported for health check). */
 export let lastBackupTimestamp = null;
+
+/** Max concurrent per-user backup uploads. */
+const UPLOAD_CONCURRENCY = 5;
 
 function createR2Client(config) {
   return new S3Client({
@@ -36,7 +48,7 @@ function getR2Config() {
 }
 
 /**
- * Backup both vault.db and meta.db to R2.
+ * Backup meta.db and all vault databases to R2.
  */
 export async function backupDatabases(ctx, metaDb, config) {
   const r2Config = getR2Config();
@@ -50,30 +62,86 @@ export async function backupDatabases(ctx, metaDb, config) {
   const datePrefix = now.toISOString().slice(0, 10); // YYYY-MM-DD
   const timestamp = now.toISOString().replace(/[:.]/g, "-");
 
-  // WAL checkpoint before reading DB files
-  try { ctx.db.pragma("wal_checkpoint(TRUNCATE)"); } catch (e) {
-    console.warn(`[backup] vault WAL checkpoint failed: ${e.message}`);
-  }
+  // WAL checkpoint meta.db
   try { metaDb.pragma("wal_checkpoint(TRUNCATE)"); } catch (e) {
     console.warn(`[backup] meta WAL checkpoint failed: ${e.message}`);
   }
 
-  const vaultDbPath = config.dbPath;
   const metaDbPath = join(config.dataDir, "meta.db");
+  const uploadedKeys = [];
 
-  const uploads = [
-    { key: `backups/${datePrefix}/vault-${timestamp}.db`, path: vaultDbPath },
-    { key: `backups/${datePrefix}/meta-${timestamp}.db`, path: metaDbPath },
-  ];
+  // 1. Always backup meta.db
+  const metaBuffer = readFileSync(metaDbPath);
+  const metaKey = `backups/${datePrefix}/meta-${timestamp}.db`;
+  await client.send(new PutObjectCommand({
+    Bucket: r2Config.bucket,
+    Key: metaKey,
+    Body: metaBuffer,
+    ContentType: "application/x-sqlite3",
+  }));
+  uploadedKeys.push(metaKey);
 
-  for (const { key, path } of uploads) {
-    const buffer = readFileSync(path);
+  if (PER_USER_DB) {
+    // 2. Per-user mode: enumerate user directories and backup each vault.db
+    const usersDir = join(config.dataDir, "users");
+    if (existsSync(usersDir)) {
+      const userDirs = readdirSync(usersDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name);
+
+      // Upload in batches with concurrency limit
+      for (let i = 0; i < userDirs.length; i += UPLOAD_CONCURRENCY) {
+        const batch = userDirs.slice(i, i + UPLOAD_CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(async (userId) => {
+            const userDbPath = join(usersDir, userId, "vault.db");
+            if (!existsSync(userDbPath)) return null;
+
+            // WAL checkpoint if connection is in pool
+            if (pool.has(userId)) {
+              try {
+                const entry = await pool.get(userId);
+                entry.db.pragma("wal_checkpoint(TRUNCATE)");
+              } catch {}
+            }
+
+            const buffer = readFileSync(userDbPath);
+            const key = `backups/${datePrefix}/users/${userId}/vault-${timestamp}.db`;
+            await client.send(new PutObjectCommand({
+              Bucket: r2Config.bucket,
+              Key: key,
+              Body: buffer,
+              ContentType: "application/x-sqlite3",
+            }));
+            return key;
+          })
+        );
+
+        for (const result of results) {
+          if (result.status === "fulfilled" && result.value) {
+            uploadedKeys.push(result.value);
+          } else if (result.status === "rejected") {
+            console.error(`[backup] Per-user backup failed: ${result.reason?.message}`);
+          }
+        }
+      }
+    }
+  } else {
+    // Legacy mode: backup shared vault.db
+    try { ctx.db.pragma("wal_checkpoint(TRUNCATE)"); } catch (e) {
+      console.warn(`[backup] vault WAL checkpoint failed: ${e.message}`);
+    }
+
+    const vaultDbPath = config.dbPath;
+    const buffer = readFileSync(vaultDbPath);
+    const key = `backups/${datePrefix}/vault-${timestamp}.db`;
     await client.send(new PutObjectCommand({
       Bucket: r2Config.bucket,
       Key: key,
       Body: buffer,
       ContentType: "application/x-sqlite3",
     }));
+    uploadedKeys.push(key);
   }
 
   // Prune backups older than 30 days
@@ -84,14 +152,73 @@ export async function backupDatabases(ctx, metaDb, config) {
     level: "info",
     event: "backup_completed",
     timestamp: lastBackupTimestamp,
-    files: uploads.map((u) => u.key),
+    files: uploadedKeys.length,
+    mode: PER_USER_DB ? "per-user" : "legacy",
   }));
 
   return lastBackupTimestamp;
 }
 
 /**
- * Restore databases from a specific R2 backup.
+ * Restore a single user's vault.db from R2 backup.
+ *
+ * @param {string} userId - User ID to restore
+ * @param {string} timestamp - ISO timestamp of the backup
+ * @param {string} [bucket] - R2 bucket name override
+ */
+export async function restoreUserFromBackup(userId, timestamp, bucket) {
+  const r2Config = getR2Config();
+  if (!r2Config) throw new Error("R2 not configured");
+
+  const client = createR2Client(r2Config);
+  const datePrefix = timestamp.slice(0, 10);
+  const ts = timestamp.replace(/[:.]/g, "-");
+
+  const key = `backups/${datePrefix}/users/${userId}/vault-${ts}.db`;
+  const dataDir = process.env.CONTEXT_VAULT_DATA_DIR || process.env.CONTEXT_MCP_DATA_DIR || "/data";
+  const dest = join(dataDir, "users", userId, "vault.db");
+
+  // Evict from pool before restoring
+  pool.evict(userId);
+
+  const response = await client.send(new GetObjectCommand({
+    Bucket: bucket || r2Config.bucket,
+    Key: key,
+  }));
+
+  const chunks = [];
+  for await (const chunk of response.Body) chunks.push(chunk);
+  const buffer = Buffer.concat(chunks);
+
+  const restorePath = dest + ".restore";
+  writeFileSync(restorePath, buffer);
+
+  // Integrity check on restored file
+  const Database = (await import("better-sqlite3")).default;
+  const testDb = new Database(restorePath, { readonly: true });
+  try {
+    const result = testDb.pragma("integrity_check");
+    if (result[0]?.integrity_check !== "ok") {
+      throw new Error(`Integrity check failed for ${key}`);
+    }
+  } finally {
+    testDb.close();
+  }
+
+  // Atomic rename
+  renameSync(restorePath, dest);
+
+  console.log(JSON.stringify({
+    level: "info",
+    event: "user_restore_completed",
+    userId,
+    timestamp,
+    key,
+  }));
+}
+
+/**
+ * Restore databases from a legacy (shared DB) backup.
  */
 export async function restoreFromBackup(bucket, timestamp) {
   const r2Config = getR2Config();
@@ -100,7 +227,7 @@ export async function restoreFromBackup(bucket, timestamp) {
   const client = createR2Client(r2Config);
   const datePrefix = timestamp.slice(0, 10);
   const ts = timestamp.replace(/[:.]/g, "-");
-  const dataDir = process.env.CONTEXT_MCP_DATA_DIR || join(process.env.HOME, ".context-mcp");
+  const dataDir = process.env.CONTEXT_VAULT_DATA_DIR || process.env.CONTEXT_MCP_DATA_DIR || join(process.env.HOME, ".context-mcp");
 
   const files = [
     { key: `backups/${datePrefix}/vault-${ts}.db`, dest: join(dataDir, "vault.db") },

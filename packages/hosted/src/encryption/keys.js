@@ -93,3 +93,82 @@ export function clearDekCache(userId) {
   if (userId) dekCache.delete(userId);
   else dekCache.clear();
 }
+
+// ─── Split-Authority Key Management ──────────────────────────────────────────
+
+/**
+ * Generate a new DEK encrypted with split-authority (requires both server + client secrets).
+ *
+ * The client key share is returned once at registration and must be saved by the user.
+ * Neither the server alone nor the client alone can decrypt — both are required.
+ *
+ * KEK = scrypt(masterSecret + clientKeyShare, salt)
+ *
+ * @param {string} masterSecret - Server master secret (from env)
+ * @returns {{ encryptedDek: Buffer, dekSalt: Buffer, dek: Buffer, clientKeyShare: string }}
+ */
+export function generateDekSplitAuthority(masterSecret) {
+  const dek = randomBytes(KEY_LENGTH);
+  const dekSalt = randomBytes(16);
+  const clientKeyShare = `cvs_${randomBytes(32).toString("hex")}`;
+
+  // Combine server + client secrets for key derivation
+  const combinedSecret = masterSecret + clientKeyShare;
+  const masterKey = deriveKey(combinedSecret, dekSalt);
+  const { encrypted, iv } = encrypt(dek.toString("hex"), masterKey);
+
+  // Store IV + encrypted DEK together
+  const encryptedDek = Buffer.concat([iv, encrypted]);
+
+  return { encryptedDek, dekSalt, dek, clientKeyShare };
+}
+
+/**
+ * Decrypt a stored DEK using split-authority (both server + client secrets).
+ *
+ * @param {Buffer} encryptedDek - IV (12 bytes) + encrypted DEK
+ * @param {Buffer} dekSalt - Salt used for key derivation
+ * @param {string} masterSecret - Server master secret
+ * @param {string} clientKeyShare - User's encryption secret (cvs_...)
+ * @returns {Buffer} - 32-byte DEK
+ */
+export function decryptDekSplitAuthority(encryptedDek, dekSalt, masterSecret, clientKeyShare) {
+  const iv = encryptedDek.subarray(0, 12);
+  const encrypted = encryptedDek.subarray(12);
+  const combinedSecret = masterSecret + clientKeyShare;
+  const masterKey = deriveKey(combinedSecret, dekSalt);
+  const dekHex = decrypt(encrypted, iv, masterKey);
+  return Buffer.from(dekHex, "hex");
+}
+
+/**
+ * Get or derive the DEK for a user using split-authority.
+ * Falls back to legacy server-only derivation if no clientKeyShare provided.
+ * Caches the result in memory.
+ *
+ * @param {string} userId
+ * @param {Buffer} encryptedDek - From meta DB
+ * @param {Buffer} dekSalt - From meta DB
+ * @param {string} masterSecret - From environment
+ * @param {string|null} clientKeyShare - User's encryption secret (null for legacy)
+ * @param {string} encryptionMode - 'legacy' or 'split-authority'
+ * @returns {Buffer} - 32-byte DEK
+ */
+export function getUserDekAuto(userId, encryptedDek, dekSalt, masterSecret, clientKeyShare, encryptionMode) {
+  // Cache key includes mode to prevent cross-contamination during migration
+  const cacheKey = `${userId}:${encryptionMode}`;
+  if (dekCache.has(cacheKey)) return dekCache.get(cacheKey);
+
+  let dek;
+  if (encryptionMode === "split-authority") {
+    if (!clientKeyShare) {
+      throw new Error("Split-authority encryption requires X-Vault-Secret header. Include your encryption secret.");
+    }
+    dek = decryptDekSplitAuthority(encryptedDek, dekSalt, masterSecret, clientKeyShare);
+  } else {
+    dek = decryptDek(encryptedDek, dekSalt, masterSecret);
+  }
+
+  dekCache.set(cacheKey, dek);
+  return dek;
+}
