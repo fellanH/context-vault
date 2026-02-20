@@ -17,6 +17,11 @@ export const inputSchema = {
   offset: z.number().optional().describe("Skip first N results for pagination"),
 };
 
+/**
+ * @param {object} args
+ * @param {import('../types.js').BaseCtx & Partial<import('../types.js').HostedCtxExtensions>} ctx
+ * @param {import('../types.js').ToolShared} shared
+ */
 export async function handler({ kind, category, tags, since, until, limit, offset }, ctx, { ensureIndexed, reindexFailed }) {
   const { config } = ctx;
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;

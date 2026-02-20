@@ -10,7 +10,7 @@ import { isEmbedAvailable } from "../index/embed.js";
 /**
  * Gather raw vault status data for formatting by consumers.
  *
- * @param {{ db, config }} ctx
+ * @param {import('../server/types.js').BaseCtx} ctx
  * @param {{ userId?: string }} opts — optional userId for per-user stats
  * @returns {{ fileCount, subdirs, kindCounts, dbSize, stalePaths, resolvedFrom, embeddingStatus, errors }}
  */

@@ -8,6 +8,10 @@ export const description =
 
 export const inputSchema = {};
 
+/**
+ * @param {object} _args
+ * @param {import('../types.js').BaseCtx & Partial<import('../types.js').HostedCtxExtensions>} ctx
+ */
 export function handler(_args, ctx) {
   const { config } = ctx;
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;

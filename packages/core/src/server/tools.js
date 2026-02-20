@@ -34,7 +34,7 @@ const TOOL_TIMEOUT_MS = 60_000;
  * Register all MCP tools on the server.
  *
  * @param {import("@modelcontextprotocol/sdk/server/mcp.js").McpServer} server
- * @param {{ db, config, stmts, embed, insertVec, deleteVec }} ctx
+ * @param {import('./types.js').BaseCtx & Partial<import('./types.js').HostedCtxExtensions>} ctx
  */
 export function registerTools(server, ctx) {
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;

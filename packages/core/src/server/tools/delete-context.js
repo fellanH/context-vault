@@ -11,6 +11,11 @@ export const inputSchema = {
   id: z.string().describe("The entry ULID to delete"),
 };
 
+/**
+ * @param {object} args
+ * @param {import('../types.js').BaseCtx & Partial<import('../types.js').HostedCtxExtensions>} ctx
+ * @param {import('../types.js').ToolShared} shared
+ */
 export async function handler({ id }, ctx, { ensureIndexed }) {
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;
 

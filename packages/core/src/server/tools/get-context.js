@@ -21,6 +21,11 @@ export const inputSchema = {
   limit: z.number().optional().describe("Max results to return (default 10)"),
 };
 
+/**
+ * @param {object} args
+ * @param {import('../types.js').BaseCtx & Partial<import('../types.js').HostedCtxExtensions>} ctx
+ * @param {import('../types.js').ToolShared} shared
+ */
 export async function handler({ query, kind, category, identity_key, tags, since, until, limit }, ctx, { ensureIndexed, reindexFailed }) {
   const { config } = ctx;
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;

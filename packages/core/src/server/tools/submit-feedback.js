@@ -15,6 +15,11 @@ export const inputSchema = {
   severity: z.enum(["low", "medium", "high"]).optional().describe("Severity level (default: medium)"),
 };
 
+/**
+ * @param {object} args
+ * @param {import('../types.js').BaseCtx & Partial<import('../types.js').HostedCtxExtensions>} ctx
+ * @param {import('../types.js').ToolShared} shared
+ */
 export async function handler({ type, title, body, severity }, ctx, { ensureIndexed }) {
   const { config } = ctx;
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;

@@ -80,6 +80,11 @@ export const inputSchema = {
   expires_at: z.string().optional().describe("ISO date for TTL expiry"),
 };
 
+/**
+ * @param {object} args
+ * @param {import('../types.js').BaseCtx & Partial<import('../types.js').HostedCtxExtensions>} ctx
+ * @param {import('../types.js').ToolShared} shared
+ */
 export async function handler({ id, kind, title, body, tags, meta, folder, source, identity_key, expires_at }, ctx, { ensureIndexed }) {
   const { config } = ctx;
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;

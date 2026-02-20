@@ -20,6 +20,11 @@ export const inputSchema = {
   tags: z.array(z.string()).optional().describe("Tags for the entry"),
 };
 
+/**
+ * @param {object} args
+ * @param {import('../types.js').BaseCtx & Partial<import('../types.js').HostedCtxExtensions>} ctx
+ * @param {import('../types.js').ToolShared} shared
+ */
 export async function handler({ url: targetUrl, kind, tags }, ctx, { ensureIndexed }) {
   const { config } = ctx;
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;
