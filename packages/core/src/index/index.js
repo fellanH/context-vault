@@ -11,7 +11,10 @@ import { readFileSync, readdirSync, existsSync, unlinkSync } from "node:fs";
 import { join, basename } from "node:path";
 import { dirToKind, walkDir, ulid } from "../core/files.js";
 import { categoryFor, CATEGORY_DIRS } from "../core/categories.js";
-import { parseFrontmatter, parseEntryFromMarkdown } from "../core/frontmatter.js";
+import {
+  parseFrontmatter,
+  parseEntryFromMarkdown,
+} from "../core/frontmatter.js";
 import { embedBatch } from "./embed.js";
 
 const EXCLUDED_DIRS = new Set(["projects", "_archive"]);
@@ -28,7 +31,24 @@ const EMBED_BATCH_SIZE = 32;
  * @param {import('../server/types.js').BaseCtx & Partial<import('../server/types.js').HostedCtxExtensions>} ctx
  * @param {{ id, kind, category, title, body, meta, tags, source, filePath, createdAt, identity_key, expires_at, userId }} entry
  */
-export async function indexEntry(ctx, { id, kind, category, title, body, meta, tags, source, filePath, createdAt, identity_key, expires_at, userId }) {
+export async function indexEntry(
+  ctx,
+  {
+    id,
+    kind,
+    category,
+    title,
+    body,
+    meta,
+    tags,
+    source,
+    filePath,
+    createdAt,
+    identity_key,
+    expires_at,
+    userId,
+  },
+) {
   const tagsJson = tags ? JSON.stringify(tags) : null;
   const metaJson = meta ? JSON.stringify(meta) : null;
   const cat = category || categoryFor(kind);
@@ -38,11 +58,24 @@ export async function indexEntry(ctx, { id, kind, category, title, body, meta, t
 
   // Entity upsert: check by (kind, identity_key, user_id) first
   if (cat === "entity" && identity_key) {
-    const existing = ctx.stmts.getByIdentityKey.get(kind, identity_key, userIdVal);
+    const existing = ctx.stmts.getByIdentityKey.get(
+      kind,
+      identity_key,
+      userIdVal,
+    );
     if (existing) {
       ctx.stmts.upsertByIdentityKey.run(
-        title || null, body, metaJson, tagsJson, source || "claude-code", cat, filePath, expires_at || null,
-        kind, identity_key, userIdVal
+        title || null,
+        body,
+        metaJson,
+        tagsJson,
+        source || "claude-code",
+        cat,
+        filePath,
+        expires_at || null,
+        kind,
+        identity_key,
+        userIdVal,
       );
       wasUpdate = true;
     }
@@ -60,16 +93,54 @@ export async function indexEntry(ctx, { id, kind, category, title, body, meta, t
         // Encrypted insert: store preview in body column for FTS, full content in encrypted columns
         const bodyPreview = body.slice(0, 200);
         ctx.stmts.insertEntryEncrypted.run(
-          id, userIdVal, kind, cat, title || null, bodyPreview, metaJson, tagsJson,
-          source || "claude-code", filePath, identity_key || null, expires_at || null, createdAt,
-          encrypted.body_encrypted, encrypted.title_encrypted, encrypted.meta_encrypted, encrypted.iv
+          id,
+          userIdVal,
+          kind,
+          cat,
+          title || null,
+          bodyPreview,
+          metaJson,
+          tagsJson,
+          source || "claude-code",
+          filePath,
+          identity_key || null,
+          expires_at || null,
+          createdAt,
+          encrypted.body_encrypted,
+          encrypted.title_encrypted,
+          encrypted.meta_encrypted,
+          encrypted.iv,
         );
       } else {
-        ctx.stmts.insertEntry.run(id, userIdVal, kind, cat, title || null, body, metaJson, tagsJson, source || "claude-code", filePath, identity_key || null, expires_at || null, createdAt);
+        ctx.stmts.insertEntry.run(
+          id,
+          userIdVal,
+          kind,
+          cat,
+          title || null,
+          body,
+          metaJson,
+          tagsJson,
+          source || "claude-code",
+          filePath,
+          identity_key || null,
+          expires_at || null,
+          createdAt,
+        );
       }
     } catch (e) {
       if (e.message.includes("UNIQUE constraint")) {
-        ctx.stmts.updateEntry.run(title || null, body, metaJson, tagsJson, source || "claude-code", cat, identity_key || null, expires_at || null, filePath);
+        ctx.stmts.updateEntry.run(
+          title || null,
+          body,
+          metaJson,
+          tagsJson,
+          source || "claude-code",
+          cat,
+          identity_key || null,
+          expires_at || null,
+          filePath,
+        );
         wasUpdate = true;
       } else {
         throw e;
@@ -83,12 +154,16 @@ export async function indexEntry(ctx, { id, kind, category, title, body, meta, t
     : ctx.stmts.getRowid.get(id);
 
   if (!rowidResult || rowidResult.rowid == null) {
-    throw new Error(`Could not find rowid for entry: ${wasUpdate ? `file_path=${filePath}` : `id=${id}`}`);
+    throw new Error(
+      `Could not find rowid for entry: ${wasUpdate ? `file_path=${filePath}` : `id=${id}`}`,
+    );
   }
 
   const rowid = Number(rowidResult.rowid);
   if (!Number.isFinite(rowid) || rowid < 1) {
-    throw new Error(`Invalid rowid retrieved: ${rowidResult.rowid} (type: ${typeof rowidResult.rowid})`);
+    throw new Error(
+      `Invalid rowid retrieved: ${rowidResult.rowid} (type: ${typeof rowidResult.rowid})`,
+    );
   }
 
   // Embeddings are always generated from plaintext (before encryption)
@@ -97,7 +172,11 @@ export async function indexEntry(ctx, { id, kind, category, title, body, meta, t
 
   // Upsert vec: delete old if exists, then insert new (skip if embedding unavailable)
   if (embedding) {
-    try { ctx.deleteVec(rowid); } catch { /* no-op if not found */ }
+    try {
+      ctx.deleteVec(rowid);
+    } catch {
+      /* no-op if not found */
+    }
     ctx.insertVec(rowid, embedding);
   }
 }
@@ -121,43 +200,62 @@ export async function reindex(ctx, opts = {}) {
   // Use INSERT OR IGNORE for reindex — handles files with duplicate frontmatter IDs
   // user_id is NULL for reindex (always local mode)
   const upsertEntry = ctx.db.prepare(
-    `INSERT OR IGNORE INTO vault (id, user_id, kind, category, title, body, meta, tags, source, file_path, identity_key, expires_at, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO vault (id, user_id, kind, category, title, body, meta, tags, source, file_path, identity_key, expires_at, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   // Auto-discover kind directories, supporting both:
   //   - Nested: knowledge/insights/, events/sessions/ (category dirs at top level)
   //   - Flat:   insights/, decisions/ (legacy — kind dirs at top level)
   const kindEntries = []; // { kind, dir }
-  const topDirs = readdirSync(ctx.config.vaultDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory() && !EXCLUDED_DIRS.has(d.name) && !d.name.startsWith("_"));
+  const topDirs = readdirSync(ctx.config.vaultDir, {
+    withFileTypes: true,
+  }).filter(
+    (d) =>
+      d.isDirectory() && !EXCLUDED_DIRS.has(d.name) && !d.name.startsWith("_"),
+  );
 
   for (const d of topDirs) {
     if (CATEGORY_DIRS.has(d.name)) {
       // Category directory — look one level deeper for kind directories
       const catDir = join(ctx.config.vaultDir, d.name);
-      const subDirs = readdirSync(catDir, { withFileTypes: true })
-        .filter((sd) => sd.isDirectory() && !sd.name.startsWith("_"));
+      const subDirs = readdirSync(catDir, { withFileTypes: true }).filter(
+        (sd) => sd.isDirectory() && !sd.name.startsWith("_"),
+      );
       for (const sd of subDirs) {
-        kindEntries.push({ kind: dirToKind(sd.name), dir: join(catDir, sd.name) });
+        kindEntries.push({
+          kind: dirToKind(sd.name),
+          dir: join(catDir, sd.name),
+        });
       }
     } else {
       // Legacy flat structure — top-level dir is a kind dir
-      kindEntries.push({ kind: dirToKind(d.name), dir: join(ctx.config.vaultDir, d.name) });
+      kindEntries.push({
+        kind: dirToKind(d.name),
+        dir: join(ctx.config.vaultDir, d.name),
+      });
     }
   }
 
-  // P2: Wrap entire reindex in a transaction
+  // Phase 1: Sync DB ops in a transaction — FTS is searchable immediately after COMMIT.
+  // Phase 2: Async embedding runs post-transaction so it can't hold the write lock
+  //          or roll back DB state on failure.
+  const pendingEmbeds = []; // { rowid, text }
+  const staleVecRowids = []; // rowids whose old vectors need deleting before re-embed
+
   ctx.db.exec("BEGIN");
   try {
-    // P4: Collect entries needing embedding, then batch-embed
-    const pendingEmbeds = []; // { rowid, text }
-
     for (const { kind, dir } of kindEntries) {
       const category = categoryFor(kind);
-      const mdFiles = walkDir(dir).filter((f) => !EXCLUDED_FILES.has(basename(f.filePath)));
+      const mdFiles = walkDir(dir).filter(
+        (f) => !EXCLUDED_FILES.has(basename(f.filePath)),
+      );
 
       // P3: Fetch all mutable fields for change detection
-      const dbRows = ctx.db.prepare("SELECT id, file_path, body, title, tags, meta FROM vault WHERE kind = ?").all(kind);
+      const dbRows = ctx.db
+        .prepare(
+          "SELECT id, file_path, body, title, tags, meta FROM vault WHERE kind = ?",
+        )
+        .all(kind);
       const dbByPath = new Map(dbRows.map((r) => [r.file_path, r]));
       const diskPaths = new Set(mdFiles.map((e) => e.filePath));
 
@@ -194,10 +292,25 @@ export async function reindex(ctx, opts = {}) {
           const tagsJson = fmMeta.tags ? JSON.stringify(fmMeta.tags) : null;
           const created = fmMeta.created || new Date().toISOString();
 
-          const result = upsertEntry.run(id, kind, category, parsed.title || null, parsed.body, metaJson, tagsJson, fmMeta.source || "file", filePath, identity_key, expires_at, created);
+          const result = upsertEntry.run(
+            id,
+            kind,
+            category,
+            parsed.title || null,
+            parsed.body,
+            metaJson,
+            tagsJson,
+            fmMeta.source || "file",
+            filePath,
+            identity_key,
+            expires_at,
+            created,
+          );
           if (result.changes > 0) {
             const rowid = ctx.stmts.getRowid.get(id).rowid;
-            const embeddingText = [parsed.title, parsed.body].filter(Boolean).join(" ");
+            const embeddingText = [parsed.title, parsed.body]
+              .filter(Boolean)
+              .join(" ");
             pendingEmbeds.push({ rowid, text: embeddingText });
             stats.added++;
           } else {
@@ -206,20 +319,33 @@ export async function reindex(ctx, opts = {}) {
         } else if (fullSync) {
           // P3: Compare all mutable fields, not just body
           const tagsJson = fmMeta.tags ? JSON.stringify(fmMeta.tags) : null;
-          const titleChanged = (parsed.title || null) !== (existing.title || null);
+          const titleChanged =
+            (parsed.title || null) !== (existing.title || null);
           const bodyChanged = existing.body !== parsed.body;
           const tagsChanged = tagsJson !== (existing.tags || null);
           const metaChanged = metaJson !== (existing.meta || null);
 
           if (bodyChanged || titleChanged || tagsChanged || metaChanged) {
-            ctx.stmts.updateEntry.run(parsed.title || null, parsed.body, metaJson, tagsJson, fmMeta.source || "file", category, identity_key, expires_at, filePath);
+            ctx.stmts.updateEntry.run(
+              parsed.title || null,
+              parsed.body,
+              metaJson,
+              tagsJson,
+              fmMeta.source || "file",
+              category,
+              identity_key,
+              expires_at,
+              filePath,
+            );
 
-            // P0: Re-embed if title or body changed
+            // Queue re-embed if title or body changed (vector ops deferred to Phase 2)
             if (bodyChanged || titleChanged) {
               const rowid = ctx.stmts.getRowid.get(existing.id)?.rowid;
               if (rowid) {
-                ctx.deleteVec(rowid);
-                const embeddingText = [parsed.title, parsed.body].filter(Boolean).join(" ");
+                staleVecRowids.push(rowid);
+                const embeddingText = [parsed.title, parsed.body]
+                  .filter(Boolean)
+                  .join(" ");
                 pendingEmbeds.push({ rowid, text: embeddingText });
               }
             }
@@ -237,7 +363,11 @@ export async function reindex(ctx, opts = {}) {
         for (const [dbPath, row] of dbByPath) {
           if (!diskPaths.has(dbPath)) {
             const vRowid = ctx.stmts.getRowid.get(row.id)?.rowid;
-            if (vRowid) ctx.deleteVec(vRowid);
+            if (vRowid) {
+              try {
+                ctx.deleteVec(vRowid);
+              } catch {}
+            }
             ctx.stmts.deleteEntry.run(row.id);
             stats.removed++;
           }
@@ -245,26 +375,21 @@ export async function reindex(ctx, opts = {}) {
       }
     }
 
-    // P4: Batch embed all pending texts (skip nulls if embedding unavailable)
-    for (let i = 0; i < pendingEmbeds.length; i += EMBED_BATCH_SIZE) {
-      const batch = pendingEmbeds.slice(i, i + EMBED_BATCH_SIZE);
-      const embeddings = await embedBatch(batch.map((e) => e.text));
-      for (let j = 0; j < batch.length; j++) {
-        if (embeddings[j]) {
-          ctx.insertVec(batch[j].rowid, embeddings[j]);
-        }
-      }
-    }
-
     // Clean up entries for kinds whose directories no longer exist on disk
     if (fullSync) {
       const indexedKinds = new Set(kindEntries.map((ke) => ke.kind));
-      const allDbKinds = ctx.db.prepare("SELECT DISTINCT kind FROM vault").all();
+      const allDbKinds = ctx.db
+        .prepare("SELECT DISTINCT kind FROM vault")
+        .all();
       for (const { kind } of allDbKinds) {
         if (!indexedKinds.has(kind)) {
-          const orphaned = ctx.db.prepare("SELECT id, rowid FROM vault WHERE kind = ?").all(kind);
+          const orphaned = ctx.db
+            .prepare("SELECT id, rowid FROM vault WHERE kind = ?")
+            .all(kind);
           for (const row of orphaned) {
-            try { ctx.deleteVec(row.rowid); } catch {}
+            try {
+              ctx.deleteVec(row.rowid);
+            } catch {}
             ctx.stmts.deleteEntry.run(row.id);
             stats.removed++;
           }
@@ -274,15 +399,23 @@ export async function reindex(ctx, opts = {}) {
 
     // Prune expired entries
     const expired = ctx.db
-      .prepare("SELECT id, file_path FROM vault WHERE expires_at IS NOT NULL AND expires_at <= datetime('now')")
+      .prepare(
+        "SELECT id, file_path FROM vault WHERE expires_at IS NOT NULL AND expires_at <= datetime('now')",
+      )
       .all();
 
     for (const row of expired) {
       if (row.file_path) {
-        try { unlinkSync(row.file_path); } catch {}
+        try {
+          unlinkSync(row.file_path);
+        } catch {}
       }
       const vRowid = ctx.stmts.getRowid.get(row.id)?.rowid;
-      if (vRowid) { try { ctx.deleteVec(vRowid); } catch {} }
+      if (vRowid) {
+        try {
+          ctx.deleteVec(vRowid);
+        } catch {}
+      }
       ctx.stmts.deleteEntry.run(row.id);
       stats.removed++;
     }
@@ -291,6 +424,27 @@ export async function reindex(ctx, opts = {}) {
   } catch (e) {
     ctx.db.exec("ROLLBACK");
     throw e;
+  }
+
+  // Phase 2: Async embedding — runs after COMMIT so FTS is already searchable.
+  // Failures here are non-fatal; semantic search catches up on next reindex.
+
+  // Delete stale vectors for updated entries before re-embedding
+  for (const rowid of staleVecRowids) {
+    try {
+      ctx.deleteVec(rowid);
+    } catch {}
+  }
+
+  // Batch embed all pending texts
+  for (let i = 0; i < pendingEmbeds.length; i += EMBED_BATCH_SIZE) {
+    const batch = pendingEmbeds.slice(i, i + EMBED_BATCH_SIZE);
+    const embeddings = await embedBatch(batch.map((e) => e.text));
+    for (let j = 0; j < batch.length; j++) {
+      if (embeddings[j]) {
+        ctx.insertVec(batch[j].rowid, embeddings[j]);
+      }
+    }
   }
 
   return stats;
