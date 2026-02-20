@@ -2,6 +2,25 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.6.0] — 2026-02-20
+
+### Security
+- **Input size limits on local MCP tools** — `save_context` and `ingest_url` now enforce body (100KB), title (500 chars), kind (64 chars), tags (20 max, 100 chars each), meta (10KB), source (200 chars), and URL (2048 chars) limits, matching hosted validation (#2)
+
+### Fixed
+- Schema version string corrected from "v6" to "v7 (teams)" in `context_status` output (#3)
+- Removed duplicate `POST /api/vault/import` route in hosted package — consolidated to single `/api/vault/entries` endpoint (#8)
+- Fixed double `initMetaDb()` call at hosted startup — now called once (#9)
+- Fixed stale prepared-statement singleton in `meta-db.js` — invalidates cache when DB path changes (#9)
+
+### Added
+- 138 new unit tests: path traversal guards (41), config resolution chain (36), entry validation (61) (#4, #5, #7)
+- `docs/encryption-trade-offs.md` — documents plaintext FTS exposure, split-authority model, and recommendations (#6)
+- Exported `safeFolderPath` from `file-ops.js` for direct testing
+
+### Test suite
+- **386 tests** across 22 test files (up from 202 in v2.5.1)
+
 ## [2.5.1] — 2026-02-20
 
 ### Changed
