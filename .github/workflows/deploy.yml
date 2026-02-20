@@ -20,9 +20,34 @@ jobs:
     steps:
       - run: echo "CI passed — proceeding with deploy"
 
-  deploy-backend-staging:
+  changes:
     needs: gate
     runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontends: ${{ steps.filter.outputs.frontends }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          base: HEAD~1
+          filters: |
+            backend:
+              - 'packages/hosted/**'
+              - 'packages/core/**'
+            frontends:
+              - 'packages/app/**'
+              - 'packages/marketing/**'
+              - 'packages/core/**'
+
+  deploy-backend-staging:
+    needs: [gate, changes]
+    runs-on: ubuntu-latest
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
@@ -31,8 +56,9 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.STAGING_FLY_API_TOKEN }}
 
   deploy-frontends-staging:
-    needs: gate
+    needs: [gate, changes]
     runs-on: ubuntu-latest
+    if: needs.changes.outputs.frontends == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,7 +77,7 @@ jobs:
       - name: Deploy marketing to Vercel (staging)
         run: |
           cd packages/marketing
-          vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }} \
+          vercel deploy --token=${{ secrets.VERCEL_TOKEN }} \
             --scope=${{ secrets.VERCEL_ORG_ID }} \
             --yes
         env:
@@ -60,7 +86,7 @@ jobs:
       - name: Deploy app to Vercel (staging)
         run: |
           cd packages/app
-          vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }} \
+          vercel deploy --token=${{ secrets.VERCEL_TOKEN }} \
             --scope=${{ secrets.VERCEL_ORG_ID }} \
             --yes
         env:
@@ -70,6 +96,7 @@ jobs:
   health-staging:
     needs: [deploy-backend-staging, deploy-frontends-staging]
     runs-on: ubuntu-latest
+    if: always() && (needs.deploy-backend-staging.result == 'success' || needs.deploy-frontends-staging.result == 'success')
     steps:
       - name: Wait for staging health
         run: |
@@ -94,9 +121,10 @@ jobs:
       - run: bash scripts/smoke-test.sh https://context-vault-staging.fly.dev
 
   deploy-backend-production:
-    needs: smoke-staging
+    needs: [smoke-staging, changes]
     runs-on: ubuntu-latest
     environment: production
+    if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
@@ -105,9 +133,10 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
   deploy-frontends-production:
-    needs: smoke-staging
+    needs: [smoke-staging, changes]
     runs-on: ubuntu-latest
     environment: production
+    if: needs.changes.outputs.frontends == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
