@@ -17,13 +17,10 @@ import {
   validateApiKey,
 } from "../auth/meta-db.js";
 import { isGoogleOAuthConfigured, getAuthUrl, exchangeCode, getRedirectUri } from "../auth/google-oauth.js";
-import { createCheckoutSession, verifyWebhookEvent, getStripe, getTierLimits, isOverEntryLimit } from "../billing/stripe.js";
-import { writeEntry } from "@context-vault/core/capture";
-import { indexEntry } from "@context-vault/core/index";
+import { createCheckoutSession, verifyWebhookEvent, getStripe, getTierLimits } from "../billing/stripe.js";
 import { generateDek, generateDekSplitAuthority, clearDekCache } from "../encryption/keys.js";
 import { decryptFromStorage } from "../encryption/vault-crypto.js";
 import { unlinkSync } from "node:fs";
-import { validateEntryInput } from "../validation/entry-validation.js";
 import { buildUserCtx } from "./user-ctx.js";
 import { PER_USER_DB } from "./ctx.js";
 import { pool, getUserDir } from "./user-db.js";
@@ -825,43 +822,8 @@ export function createManagementRoutes(ctx) {
     return c.json({ deleted: true });
   });
 
-  // ─── Vault Import/Export (for migration) ───────────────────────────────────
-
-  /** Import a single entry into the vault */
-  api.post("/api/vault/import", async (c) => {
-    const user = requireAuth(c);
-    if (!user) return c.json({ error: "Unauthorized" }, 401);
-
-    const userCtx = await buildUserCtx(ctx, user, VAULT_MASTER_SECRET);
-
-    const data = await c.req.json().catch(() => null);
-    if (!data) return c.json({ error: "Invalid JSON body" }, 400);
-
-    const validationError = validateEntryInput(data);
-    if (validationError) return c.json({ error: validationError.error }, validationError.status);
-
-    // ── Entry limit enforcement (per-user) ─────────────────────────────────
-    const { c: entryCount } = userCtx.db.prepare("SELECT COUNT(*) as c FROM vault WHERE user_id = ? OR user_id IS NULL").get(user.userId);
-    if (isOverEntryLimit(user.tier, entryCount)) {
-      return c.json({ error: "Entry limit reached. Upgrade to Pro." }, 403);
-    }
-
-    const entry = writeEntry(userCtx, {
-      kind: data.kind,
-      title: data.title,
-      body: data.body,
-      meta: data.meta,
-      tags: data.tags,
-      source: data.source,
-      identity_key: data.identity_key,
-      expires_at: data.expires_at,
-      userId: user.userId,
-    });
-
-    await indexEntry(userCtx, entry);
-
-    return c.json({ id: entry.id });
-  });
+  // ─── Vault Export (for migration) ───────────────────────────────────────────
+  // NOTE: Import routes (single + bulk) are in vault-api.js with standard auth middleware
 
   /** Export all vault entries */
   api.get("/api/vault/export", async (c) => {

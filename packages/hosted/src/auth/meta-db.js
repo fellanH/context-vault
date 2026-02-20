@@ -91,6 +91,7 @@ const META_SCHEMA = `
 `;
 
 let metaDb = null;
+let metaDbPath = null;
 
 /**
  * Initialize the meta database.
@@ -98,7 +99,12 @@ let metaDb = null;
  * @returns {import("better-sqlite3").Database}
  */
 export function initMetaDb(dbPath) {
-  if (metaDb) return metaDb;
+  if (metaDb && metaDbPath === dbPath) return metaDb;
+  // If called with a different path, invalidate cached statements
+  if (metaDb && metaDbPath !== dbPath) {
+    stmts = null;
+  }
+  metaDbPath = dbPath;
   metaDb = new Database(dbPath);
   metaDb.pragma("journal_mode = WAL");
   metaDb.pragma("foreign_keys = ON");

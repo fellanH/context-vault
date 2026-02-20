@@ -92,8 +92,8 @@ validateEnv(ctx.config);
 
 // Initialize meta database for auth and usage tracking
 const metaDbPath = join(ctx.config.dataDir, "meta.db");
-initMetaDb(metaDbPath);
-prepareMetaStatements(initMetaDb(metaDbPath));
+const metaDb = initMetaDb(metaDbPath);
+prepareMetaStatements(metaDb);
 console.log(`[hosted] Meta DB: ${metaDbPath}`);
 console.log(`[hosted] Auth: ${AUTH_REQUIRED ? "required" : "open (dev mode)"}`);
 
