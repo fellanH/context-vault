@@ -8,11 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createTestCtx } from "../helpers/ctx.js";
 import { captureAndIndex } from "@context-vault/core/capture";
-import { indexEntry } from "@context-vault/core/index";
-import {
-  buildLocalManifest,
-  computeSyncPlan,
-} from "@context-vault/core/sync";
+import { buildLocalManifest, computeSyncPlan } from "@context-vault/core/sync";
 
 describe("sync: buildLocalManifest", () => {
   let ctx, cleanup;
@@ -22,17 +18,13 @@ describe("sync: buildLocalManifest", () => {
 
     // Seed with several entries
     for (let i = 0; i < 5; i++) {
-      await captureAndIndex(
-        ctx,
-        {
-          kind: "insight",
-          title: `Test entry ${i}`,
-          body: `Body content for test entry number ${i}`,
-          tags: ["test", `entry-${i}`],
-          source: "sync-test",
-        },
-        indexEntry
-      );
+      await captureAndIndex(ctx, {
+        kind: "insight",
+        title: `Test entry ${i}`,
+        body: `Body content for test entry number ${i}`,
+        tags: ["test", `entry-${i}`],
+        source: "sync-test",
+      });
     }
   }, 60000);
 
@@ -89,11 +81,17 @@ describe("sync: computeSyncPlan", () => {
   it("handles both push and pull in same plan", () => {
     const local = new Map([
       ["shared", { id: "shared", created_at: "2026-01-01", kind: "insight" }],
-      ["local-only", { id: "local-only", created_at: "2026-01-02", kind: "insight" }],
+      [
+        "local-only",
+        { id: "local-only", created_at: "2026-01-02", kind: "insight" },
+      ],
     ]);
     const remote = new Map([
       ["shared", { id: "shared", created_at: "2026-01-01", kind: "insight" }],
-      ["remote-only", { id: "remote-only", created_at: "2026-01-03", kind: "decision" }],
+      [
+        "remote-only",
+        { id: "remote-only", created_at: "2026-01-03", kind: "decision" },
+      ],
     ]);
 
     const plan = computeSyncPlan(local, remote);
@@ -152,7 +150,11 @@ describe("sync: computeSyncPlan", () => {
     // 300 shared, 200 local-only, 100 remote-only
     for (let i = 0; i < 300; i++) {
       const id = `shared-${i}`;
-      const entry = { id, created_at: `2026-01-01T00:00:${String(i).padStart(2, "0")}`, kind: "insight" };
+      const entry = {
+        id,
+        created_at: `2026-01-01T00:00:${String(i).padStart(2, "0")}`,
+        kind: "insight",
+      };
       local.set(id, entry);
       remote.set(id, entry);
     }
@@ -173,10 +175,26 @@ describe("sync: computeSyncPlan", () => {
 
   it("deduplication: entries with same ID are up-to-date (not pushed or pulled)", () => {
     const local = new Map([
-      ["dup-1", { id: "dup-1", created_at: "2026-01-01T00:00:00Z", kind: "insight", title: "Local version" }],
+      [
+        "dup-1",
+        {
+          id: "dup-1",
+          created_at: "2026-01-01T00:00:00Z",
+          kind: "insight",
+          title: "Local version",
+        },
+      ],
     ]);
     const remote = new Map([
-      ["dup-1", { id: "dup-1", created_at: "2026-01-01T12:00:00Z", kind: "insight", title: "Remote version" }],
+      [
+        "dup-1",
+        {
+          id: "dup-1",
+          created_at: "2026-01-01T12:00:00Z",
+          kind: "insight",
+          title: "Remote version",
+        },
+      ],
     ]);
 
     const plan = computeSyncPlan(local, remote);

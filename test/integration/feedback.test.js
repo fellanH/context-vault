@@ -18,18 +18,14 @@ describe("feedback kind roundtrip", () => {
   let savedFilePath;
 
   it("saves a feedback entry with status: new", async () => {
-    const entry = await captureAndIndex(
-      ctx,
-      {
-        kind: "feedback",
-        title: "Search results missing tags",
-        body: "When searching with tag filters, results sometimes omit entries that have matching tags",
-        tags: ["bug", "medium"],
-        source: "submit_feedback",
-        meta: { feedback_type: "bug", severity: "medium", status: "new" },
-      },
-      indexEntry
-    );
+    const entry = await captureAndIndex(ctx, {
+      kind: "feedback",
+      title: "Search results missing tags",
+      body: "When searching with tag filters, results sometimes omit entries that have matching tags",
+      tags: ["bug", "medium"],
+      source: "submit_feedback",
+      meta: { feedback_type: "bug", severity: "medium", status: "new" },
+    });
 
     expect(entry.id).toBeTruthy();
     expect(entry.filePath).toBeTruthy();
