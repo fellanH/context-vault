@@ -2,6 +2,13 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.5.1] — 2026-02-20
+
+### Changed
+- **Repo rename** — all references updated from `context-mcp` to `context-vault` (GitHub URLs, package metadata, scripts, docs, campaign assets)
+- Renamed `dev.context-mcp.pipeline.plist` → `dev.context-vault.pipeline.plist` with corrected paths
+- Backward compatibility preserved: `~/.context-mcp/` data dir, `CONTEXT_MCP_*` env vars, and `context-mcp` CLI alias still work
+
 ## [2.5.0] — 2026-02-19
 
 ### Added
