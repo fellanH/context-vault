@@ -88,6 +88,13 @@ When asked for social media copy to accompany a blog post, write it to `docs/gtm
 - Reddit: `campaign-{letter}-reddit.md`
 - HN: `campaign-{letter}-hn.md`
 
+## Branch Ownership
+
+- **Allowed prefix:** `feat/content-<slug>` for new content, `feat/gtm-<slug>` for GTM-integrated work.
+- Your changes are limited to `packages/marketing/src/app/content/posts.ts` and `docs/gtm/assets/`.
+- Before creating a branch: run `git branch` and `gh pr list`. A content branch for the same slug may already exist.
+- After your PR merges: delete the branch locally and remotely.
+
 ## Boundaries
 
 You do NOT:

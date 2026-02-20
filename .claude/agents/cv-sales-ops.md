@@ -94,6 +94,13 @@ Store persona demos in `docs/gtm/demos/`.
 - No company names tied to specific individuals
 - If you need to reference a specific conversation, use anonymized descriptions
 
+## Branch Ownership
+
+- **Most work is doc-only** (pipeline.md, sales-playbook.md, sales-assets.md, weekly-log.md, demos/) — no branch needed. Commit directly or open a light `chore/gtm-<slug>` PR.
+- **No code changes.** You never touch `packages/**`. If you think you need to, stop and consult the user.
+- Before creating any branch: run `git branch` and `gh pr list` to check whether a GTM branch already exists.
+- After your PR merges: delete the branch locally (`git branch -d`) and remotely (`git push origin --delete`).
+
 ## Boundaries
 
 You do NOT:

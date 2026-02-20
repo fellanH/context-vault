@@ -113,6 +113,13 @@ Update campaign material status as you produce drafts.
 - `{top_post_title}` — best performing post
 - `{github_stars}` — current star count
 
+## Branch Ownership
+
+- **Most work is doc-only** (assets, tracker, weekly-log) — no branch needed. Commit directly or open a light `chore/gtm-<slug>` PR.
+- **If code changes are needed** (unlikely — you should not be touching packages/**): use prefix `feat/gtm-<slug>` and confirm with the user before creating the branch.
+- Before creating any branch: run `git branch` and `gh pr list` to check whether a GTM branch already exists.
+- Never touch `packages/**` directories. If you think you need to, stop and consult the user.
+
 ## Boundaries
 
 You do NOT:
