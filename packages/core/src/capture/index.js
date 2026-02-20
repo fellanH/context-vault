@@ -1,10 +1,8 @@
 /**
  * Capture Layer — Public API
  *
- * Writes knowledge entries to vault as .md files.
- * That is its entire job. It does not index, embed, or query.
- *
- * Agent Constraint: Only imports from ../core. Never imports ../index or ../retrieve.
+ * Writes knowledge entries to vault as .md files and indexes them.
+ * captureAndIndex() is the write-through entry point (capture + index + rollback on failure).
  */
 
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -14,8 +12,23 @@ import { categoryFor } from "../core/categories.js";
 import { parseFrontmatter, formatFrontmatter } from "../core/frontmatter.js";
 import { formatBody } from "./formatters.js";
 import { writeEntryFile } from "./file-ops.js";
+import { indexEntry } from "../index/index.js";
 
-export function writeEntry(ctx, { kind, title, body, meta, tags, source, folder, identity_key, expires_at, userId }) {
+export function writeEntry(
+  ctx,
+  {
+    kind,
+    title,
+    body,
+    meta,
+    tags,
+    source,
+    folder,
+    identity_key,
+    expires_at,
+    userId,
+  },
+) {
   if (!kind || typeof kind !== "string") {
     throw new Error("writeEntry: kind is required (non-empty string)");
   }
@@ -55,11 +68,34 @@ export function writeEntry(ctx, { kind, title, body, meta, tags, source, folder,
   }
 
   const filePath = writeEntryFile(ctx.config.vaultDir, kind, {
-    id, title, body, meta, tags, source, createdAt, folder,
-    category, identity_key, expires_at,
+    id,
+    title,
+    body,
+    meta,
+    tags,
+    source,
+    createdAt,
+    folder,
+    category,
+    identity_key,
+    expires_at,
   });
 
-  return { id, filePath, kind, category, title, body, meta, tags, source, createdAt, identity_key, expires_at, userId: userId || null };
+  return {
+    id,
+    filePath,
+    kind,
+    category,
+    title,
+    body,
+    meta,
+    tags,
+    source,
+    createdAt,
+    identity_key,
+    expires_at,
+    userId: userId || null,
+  };
 }
 
 /**
@@ -81,8 +117,10 @@ export function updateEntryFile(ctx, existing, updates) {
   const title = updates.title !== undefined ? updates.title : existing.title;
   const body = updates.body !== undefined ? updates.body : existing.body;
   const tags = updates.tags !== undefined ? updates.tags : existingTags;
-  const source = updates.source !== undefined ? updates.source : existing.source;
-  const expires_at = updates.expires_at !== undefined ? updates.expires_at : existing.expires_at;
+  const source =
+    updates.source !== undefined ? updates.source : existing.source;
+  const expires_at =
+    updates.expires_at !== undefined ? updates.expires_at : existing.expires_at;
 
   let mergedMeta;
   if (updates.meta !== undefined) {
@@ -127,7 +165,7 @@ export function updateEntryFile(ctx, existing, updates) {
   };
 }
 
-export async function captureAndIndex(ctx, data, indexFn) {
+export async function captureAndIndex(ctx, data) {
   // For entity upserts, preserve previous file content for safe rollback
   let previousContent = null;
   if (categoryFor(data.kind) === "entity" && data.identity_key) {
@@ -141,17 +179,21 @@ export async function captureAndIndex(ctx, data, indexFn) {
 
   const entry = writeEntry(ctx, data);
   try {
-    await indexFn(ctx, entry);
+    await indexEntry(ctx, entry);
     return entry;
   } catch (err) {
     // Rollback: restore previous content for entity upserts, delete for new entries
     if (previousContent) {
-      try { writeFileSync(entry.filePath, previousContent); } catch {}
+      try {
+        writeFileSync(entry.filePath, previousContent);
+      } catch {}
     } else {
-      try { unlinkSync(entry.filePath); } catch {}
+      try {
+        unlinkSync(entry.filePath);
+      } catch {}
     }
     throw new Error(
-      `Capture succeeded but indexing failed — file rolled back. ${err.message}`
+      `Capture succeeded but indexing failed — file rolled back. ${err.message}`,
     );
   }
 }

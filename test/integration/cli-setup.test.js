@@ -201,7 +201,7 @@ describe("seed entries", () => {
     const now = new Date().toISOString();
     writeFileSync(
       insightPath,
-      `---\nid: ${id}\ntags: ["getting-started", "vault"]\nsource: context-vault-setup\ncreated: ${now}\n---\nWelcome to your context vault!\n`
+      `---\nid: ${id}\ntags: ["getting-started", "vault"]\nsource: context-vault-setup\ncreated: ${now}\n---\nWelcome to your context vault!\n`,
     );
 
     expect(existsSync(insightPath)).toBe(true);
@@ -262,7 +262,7 @@ describe("full setup flow E2E", () => {
   it("completes setup --yes --skip-embeddings in an isolated HOME", () => {
     const { stdout, stderr, exitCode } = runCli(
       "setup --yes --skip-embeddings",
-      { env: { HOME: tmpHome }, timeout: 60000 }
+      { env: { HOME: tmpHome }, timeout: 60000 },
     );
 
     expect(exitCode).toBe(0);
@@ -279,7 +279,12 @@ describe("full setup flow E2E", () => {
     expect(config.dbPath).toBeDefined();
 
     // Seed entries created
-    const seedPath = join(vaultDir, "knowledge", "insights", "getting-started.md");
+    const seedPath = join(
+      vaultDir,
+      "knowledge",
+      "insights",
+      "getting-started.md",
+    );
     expect(existsSync(seedPath)).toBe(true);
     const seedContent = readFileSync(seedPath, "utf-8");
     expect(seedContent).toContain("getting-started");
@@ -309,7 +314,6 @@ describe("seed entry searchability", () => {
 
   it("seed entry is findable via hybridSearch", async () => {
     const { captureAndIndex } = await import("@context-vault/core/capture");
-    const { indexEntry } = await import("@context-vault/core/index");
     const { hybridSearch } = await import("@context-vault/core/retrieve");
 
     // Write a seed-format entry
@@ -321,7 +325,7 @@ describe("seed entry searchability", () => {
       source: "context-vault-setup",
     };
 
-    await captureAndIndex(testCtx, entry, indexEntry);
+    await captureAndIndex(testCtx, entry);
 
     // Search for it
     const results = await hybridSearch(testCtx, "getting started");

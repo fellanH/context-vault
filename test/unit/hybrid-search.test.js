@@ -1,22 +1,32 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { buildFtsQuery, recencyBoost, buildFilterClauses, hybridSearch } from "@context-vault/core/retrieve";
+import {
+  buildFtsQuery,
+  recencyBoost,
+  buildFilterClauses,
+  hybridSearch,
+} from "@context-vault/core/retrieve";
 import { createTestCtx } from "../helpers/ctx.js";
 import { captureAndIndex } from "@context-vault/core/capture";
-import { indexEntry } from "@context-vault/core/index";
 
 // ─── buildFtsQuery ──────────────────────────────────────────────────────────
 
 describe("buildFtsQuery", () => {
   it("joins words with AND and quotes them", () => {
-    expect(buildFtsQuery("sqlite wal mode")).toBe('"sqlite" AND "wal" AND "mode"');
+    expect(buildFtsQuery("sqlite wal mode")).toBe(
+      '"sqlite" AND "wal" AND "mode"',
+    );
   });
 
   it("strips FTS5 metacharacters", () => {
-    expect(buildFtsQuery('hello* "world" (test)')).toBe('"hello" AND "world" AND "test"');
+    expect(buildFtsQuery('hello* "world" (test)')).toBe(
+      '"hello" AND "world" AND "test"',
+    );
   });
 
   it("strips colons, carets, tildes, braces", () => {
-    expect(buildFtsQuery("col:on car^et til~de {brace}")).toBe('"colon" AND "caret" AND "tilde" AND "brace"');
+    expect(buildFtsQuery("col:on car^et til~de {brace}")).toBe(
+      '"colon" AND "caret" AND "tilde" AND "brace"',
+    );
   });
 
   it("returns null for empty query", () => {
@@ -97,7 +107,9 @@ describe("buildFilterClauses", () => {
   });
 
   it("adds category filter", () => {
-    const { clauses, params } = buildFilterClauses({ categoryFilter: "knowledge" });
+    const { clauses, params } = buildFilterClauses({
+      categoryFilter: "knowledge",
+    });
     expect(clauses).toContain("e.category = ?");
     expect(params).toContain("knowledge");
   });
@@ -115,13 +127,17 @@ describe("buildFilterClauses", () => {
   });
 
   it("adds userId filter", () => {
-    const { clauses, params } = buildFilterClauses({ userIdFilter: "user-123" });
+    const { clauses, params } = buildFilterClauses({
+      userIdFilter: "user-123",
+    });
     expect(clauses).toContain("e.user_id = ?");
     expect(params).toContain("user-123");
   });
 
   it("adds teamId filter", () => {
-    const { clauses, params } = buildFilterClauses({ teamIdFilter: "team-456" });
+    const { clauses, params } = buildFilterClauses({
+      teamIdFilter: "team-456",
+    });
     expect(clauses).toContain("e.team_id = ?");
     expect(params).toContain("team-456");
   });
@@ -167,7 +183,7 @@ describe("hybridSearch", () => {
       body: "WAL mode allows concurrent reads and writes in SQLite databases. It is the recommended journal mode.",
       tags: ["sqlite", "database"],
       source: "test",
-    }, indexEntry);
+    });
 
     await captureAndIndex(ctx, {
       kind: "decision",
@@ -175,7 +191,7 @@ describe("hybridSearch", () => {
       body: "Chose Vite over webpack for faster development builds and better HMR support.",
       tags: ["tooling", "frontend"],
       source: "test",
-    }, indexEntry);
+    });
 
     await captureAndIndex(ctx, {
       kind: "pattern",
@@ -183,7 +199,7 @@ describe("hybridSearch", () => {
       body: "Wrap React components in error boundaries to catch rendering errors gracefully.",
       tags: ["react", "patterns"],
       source: "test",
-    }, indexEntry);
+    });
 
     await captureAndIndex(ctx, {
       kind: "contact",
@@ -192,7 +208,7 @@ describe("hybridSearch", () => {
       tags: ["team", "frontend"],
       identity_key: "alice",
       source: "test",
-    }, indexEntry);
+    });
 
     await captureAndIndex(ctx, {
       kind: "session",
@@ -200,7 +216,7 @@ describe("hybridSearch", () => {
       body: "Debugged a memory leak in the production Node.js server caused by unclosed database connections.",
       tags: ["debugging", "nodejs"],
       source: "test",
-    }, indexEntry);
+    });
   }, 60000);
 
   afterAll(() => cleanup());
@@ -233,7 +249,9 @@ describe("hybridSearch", () => {
   // ── Kind filter ─────────────────────────────────────────────────────────
 
   it("filters by kind", async () => {
-    const results = await hybridSearch(ctx, "developer", { kindFilter: "contact" });
+    const results = await hybridSearch(ctx, "developer", {
+      kindFilter: "contact",
+    });
     expect(results.length).toBeGreaterThan(0);
     for (const r of results) {
       expect(r.kind).toBe("contact");
@@ -244,7 +262,9 @@ describe("hybridSearch", () => {
     // "SQLite WAL mode" is an insight topic — filtering by contact should exclude FTS matches.
     // Vector search may still return low-score semantic matches via post-filtering,
     // but all returned results must respect the kindFilter.
-    const results = await hybridSearch(ctx, "SQLite WAL mode", { kindFilter: "contact" });
+    const results = await hybridSearch(ctx, "SQLite WAL mode", {
+      kindFilter: "contact",
+    });
     for (const r of results) {
       expect(r.kind).toBe("contact");
     }
@@ -253,14 +273,18 @@ describe("hybridSearch", () => {
   // ── Category filter ─────────────────────────────────────────────────────
 
   it("filters by category", async () => {
-    const results = await hybridSearch(ctx, "developer React", { categoryFilter: "entity" });
+    const results = await hybridSearch(ctx, "developer React", {
+      categoryFilter: "entity",
+    });
     for (const r of results) {
       expect(r.category).toBe("entity");
     }
   }, 30000);
 
   it("filters by event category", async () => {
-    const results = await hybridSearch(ctx, "debugging memory leak", { categoryFilter: "event" });
+    const results = await hybridSearch(ctx, "debugging memory leak", {
+      categoryFilter: "event",
+    });
     expect(results.length).toBeGreaterThan(0);
     for (const r of results) {
       expect(r.category).toBe("event");
@@ -292,14 +316,21 @@ describe("hybridSearch", () => {
   // ── Pagination ──────────────────────────────────────────────────────────
 
   it("respects limit", async () => {
-    const results = await hybridSearch(ctx, "developer frontend React", { limit: 2 });
+    const results = await hybridSearch(ctx, "developer frontend React", {
+      limit: 2,
+    });
     expect(results.length).toBeLessThanOrEqual(2);
   }, 30000);
 
   it("respects offset", async () => {
-    const all = await hybridSearch(ctx, "developer frontend React", { limit: 10 });
+    const all = await hybridSearch(ctx, "developer frontend React", {
+      limit: 10,
+    });
     if (all.length > 1) {
-      const offset = await hybridSearch(ctx, "developer frontend React", { limit: 10, offset: 1 });
+      const offset = await hybridSearch(ctx, "developer frontend React", {
+        limit: 10,
+        offset: 1,
+      });
       expect(offset[0].id).toBe(all[1].id);
     }
   }, 30000);
@@ -308,15 +339,31 @@ describe("hybridSearch", () => {
 
   it("applies recency decay to event entries", async () => {
     // Insert an old event
-    const pastDate = new Date(Date.now() - 90 * 86400000).toISOString().replace("T", " ").slice(0, 19);
-    ctx.db.prepare(
-      "INSERT INTO vault (id, kind, category, title, body, tags, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run("old-event-1", "session", "event", "Old debug session", "This is an old debugging session from months ago about Node.js servers", '["debugging"]', "test", pastDate);
+    const pastDate = new Date(Date.now() - 90 * 86400000)
+      .toISOString()
+      .replace("T", " ")
+      .slice(0, 19);
+    ctx.db
+      .prepare(
+        "INSERT INTO vault (id, kind, category, title, body, tags, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        "old-event-1",
+        "session",
+        "event",
+        "Old debug session",
+        "This is an old debugging session from months ago about Node.js servers",
+        '["debugging"]',
+        "test",
+        pastDate,
+      );
 
     // Search — the old event should have a lower score than the recent one
     const results = await hybridSearch(ctx, "debugging session Node.js");
     const oldEvent = results.find((r) => r.id === "old-event-1");
-    const newEvent = results.find((r) => r.title === "Production debugging session");
+    const newEvent = results.find(
+      (r) => r.title === "Production debugging session",
+    );
 
     if (oldEvent && newEvent) {
       expect(newEvent.score).toBeGreaterThan(oldEvent.score);
@@ -327,10 +374,24 @@ describe("hybridSearch", () => {
   }, 30000);
 
   it("does not decay knowledge entries regardless of age", async () => {
-    const pastDate = new Date(Date.now() - 365 * 86400000).toISOString().replace("T", " ").slice(0, 19);
-    ctx.db.prepare(
-      "INSERT INTO vault (id, kind, category, title, body, tags, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run("old-insight-1", "insight", "knowledge", "Old SQLite insight", "SQLite is a lightweight embedded database engine", '["sqlite"]', "test", pastDate);
+    const pastDate = new Date(Date.now() - 365 * 86400000)
+      .toISOString()
+      .replace("T", " ")
+      .slice(0, 19);
+    ctx.db
+      .prepare(
+        "INSERT INTO vault (id, kind, category, title, body, tags, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        "old-insight-1",
+        "insight",
+        "knowledge",
+        "Old SQLite insight",
+        "SQLite is a lightweight embedded database engine",
+        '["sqlite"]',
+        "test",
+        pastDate,
+      );
 
     const results = await hybridSearch(ctx, "SQLite database engine");
     const oldInsight = results.find((r) => r.id === "old-insight-1");
@@ -405,10 +466,24 @@ describe("hybridSearch", () => {
   // ── Expired entries ─────────────────────────────────────────────────────
 
   it("excludes expired entries", async () => {
-    const pastExpiry = new Date(Date.now() - 86400000).toISOString().replace("T", " ").slice(0, 19);
-    ctx.db.prepare(
-      "INSERT INTO vault (id, kind, category, title, body, tags, source, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run("expired-1", "insight", "knowledge", "Expired insight", "This entry about SQLite has expired and should not appear", '["sqlite"]', "test", pastExpiry);
+    const pastExpiry = new Date(Date.now() - 86400000)
+      .toISOString()
+      .replace("T", " ")
+      .slice(0, 19);
+    ctx.db
+      .prepare(
+        "INSERT INTO vault (id, kind, category, title, body, tags, source, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(
+        "expired-1",
+        "insight",
+        "knowledge",
+        "Expired insight",
+        "This entry about SQLite has expired and should not appear",
+        '["sqlite"]',
+        "test",
+        pastExpiry,
+      );
 
     const results = await hybridSearch(ctx, "expired SQLite insight");
     const expired = results.find((r) => r.id === "expired-1");

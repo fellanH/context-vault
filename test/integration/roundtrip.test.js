@@ -18,17 +18,13 @@ describe("save → search → list → update → delete roundtrip", () => {
   let savedFilePath;
 
   it("saves an entry", async () => {
-    const entry = await captureAndIndex(
-      ctx,
-      {
-        kind: "insight",
-        title: "SQLite WAL mode",
-        body: "WAL mode allows concurrent reads and writes in SQLite databases",
-        tags: ["sqlite", "database"],
-        source: "test",
-      },
-      indexEntry
-    );
+    const entry = await captureAndIndex(ctx, {
+      kind: "insight",
+      title: "SQLite WAL mode",
+      body: "WAL mode allows concurrent reads and writes in SQLite databases",
+      tags: ["sqlite", "database"],
+      source: "test",
+    });
 
     expect(entry.id).toBeTruthy();
     expect(entry.filePath).toBeTruthy();
@@ -49,7 +45,9 @@ describe("save → search → list → update → delete roundtrip", () => {
 
   it("lists the entry via SQL", () => {
     const rows = ctx.db
-      .prepare("SELECT id, title, kind, category, tags, created_at FROM vault ORDER BY created_at DESC")
+      .prepare(
+        "SELECT id, title, kind, category, tags, created_at FROM vault ORDER BY created_at DESC",
+      )
       .all();
     expect(rows.length).toBeGreaterThan(0);
     const found = rows.find((r) => r.id === savedId);
@@ -105,7 +103,9 @@ describe("save → search → list → update → delete roundtrip", () => {
     // Delete vector embedding
     const rowidResult = ctx.stmts.getRowid.get(savedId);
     if (rowidResult?.rowid) {
-      try { ctx.deleteVec(Number(rowidResult.rowid)); } catch {}
+      try {
+        ctx.deleteVec(Number(rowidResult.rowid));
+      } catch {}
     }
 
     // Delete DB row

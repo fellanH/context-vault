@@ -6,7 +6,6 @@
  */
 
 import { captureAndIndex } from "./index.js";
-import { indexEntry } from "../index/index.js";
 
 /**
  * @typedef {object} EntryData
@@ -55,21 +54,17 @@ export async function importEntries(ctx, entries, opts = {}) {
         continue;
       }
 
-      await captureAndIndex(
-        ctx,
-        {
-          kind: entry.kind || "insight",
-          title: entry.title || null,
-          body: entry.body,
-          meta: entry.meta,
-          tags: entry.tags,
-          source: entry.source || source || "import",
-          identity_key: entry.identity_key,
-          expires_at: entry.expires_at,
-          userId: ctx.userId || null,
-        },
-        indexEntry
-      );
+      await captureAndIndex(ctx, {
+        kind: entry.kind || "insight",
+        title: entry.title || null,
+        body: entry.body,
+        meta: entry.meta,
+        tags: entry.tags,
+        source: entry.source || source || "import",
+        identity_key: entry.identity_key,
+        expires_at: entry.expires_at,
+        userId: ctx.userId || null,
+      });
       imported++;
     } catch (err) {
       failed++;

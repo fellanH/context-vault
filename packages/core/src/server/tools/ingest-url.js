@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { captureAndIndex } from "../../capture/index.js";
-import { indexEntry } from "../../index/index.js";
 import { ok, err, ensureVaultExists } from "../helpers.js";
 
 // ─── Input size limits (mirrors hosted validation) ────────────────────────────
@@ -25,26 +24,40 @@ export const inputSchema = {
  * @param {import('../types.js').BaseCtx & Partial<import('../types.js').HostedCtxExtensions>} ctx
  * @param {import('../types.js').ToolShared} shared
  */
-export async function handler({ url: targetUrl, kind, tags }, ctx, { ensureIndexed }) {
+export async function handler(
+  { url: targetUrl, kind, tags },
+  ctx,
+  { ensureIndexed },
+) {
   const { config } = ctx;
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;
 
   const vaultErr = ensureVaultExists(config);
   if (vaultErr) return vaultErr;
 
-  if (!targetUrl?.trim()) return err("Required: url (non-empty string)", "INVALID_INPUT");
-  if (targetUrl.length > MAX_URL_LENGTH) return err(`url must be under ${MAX_URL_LENGTH} chars`, "INVALID_INPUT");
+  if (!targetUrl?.trim())
+    return err("Required: url (non-empty string)", "INVALID_INPUT");
+  if (targetUrl.length > MAX_URL_LENGTH)
+    return err(`url must be under ${MAX_URL_LENGTH} chars`, "INVALID_INPUT");
   if (kind !== undefined && kind !== null) {
     if (typeof kind !== "string" || kind.length > MAX_KIND_LENGTH) {
-      return err(`kind must be a string, max ${MAX_KIND_LENGTH} chars`, "INVALID_INPUT");
+      return err(
+        `kind must be a string, max ${MAX_KIND_LENGTH} chars`,
+        "INVALID_INPUT",
+      );
     }
   }
   if (tags !== undefined && tags !== null) {
-    if (!Array.isArray(tags)) return err("tags must be an array of strings", "INVALID_INPUT");
-    if (tags.length > MAX_TAGS_COUNT) return err(`tags: max ${MAX_TAGS_COUNT} tags allowed`, "INVALID_INPUT");
+    if (!Array.isArray(tags))
+      return err("tags must be an array of strings", "INVALID_INPUT");
+    if (tags.length > MAX_TAGS_COUNT)
+      return err(`tags: max ${MAX_TAGS_COUNT} tags allowed`, "INVALID_INPUT");
     for (const tag of tags) {
       if (typeof tag !== "string" || tag.length > MAX_TAG_LENGTH) {
-        return err(`each tag must be a string, max ${MAX_TAG_LENGTH} chars`, "INVALID_INPUT");
+        return err(
+          `each tag must be a string, max ${MAX_TAG_LENGTH} chars`,
+          "INVALID_INPUT",
+        );
       }
     }
   }
@@ -55,15 +68,20 @@ export async function handler({ url: targetUrl, kind, tags }, ctx, { ensureIndex
   if (ctx.checkLimits) {
     const usage = ctx.checkLimits();
     if (usage.entryCount >= usage.maxEntries) {
-      return err(`Entry limit reached (${usage.maxEntries}). Upgrade to Pro for unlimited entries.`, "LIMIT_EXCEEDED");
+      return err(
+        `Entry limit reached (${usage.maxEntries}). Upgrade to Pro for unlimited entries.`,
+        "LIMIT_EXCEEDED",
+      );
     }
   }
 
   try {
     const { ingestUrl } = await import("../../capture/ingest-url.js");
     const entryData = await ingestUrl(targetUrl, { kind, tags });
-    const entry = await captureAndIndex(ctx, { ...entryData, userId }, indexEntry);
-    const relPath = entry.filePath ? entry.filePath.replace(config.vaultDir + "/", "") : entry.filePath;
+    const entry = await captureAndIndex(ctx, { ...entryData, userId });
+    const relPath = entry.filePath
+      ? entry.filePath.replace(config.vaultDir + "/", "")
+      : entry.filePath;
     const parts = [
       `✓ Ingested URL → ${relPath}`,
       `  id: ${entry.id}`,

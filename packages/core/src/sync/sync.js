@@ -9,7 +9,6 @@
  */
 
 import { captureAndIndex } from "../capture/index.js";
-import { indexEntry } from "../index/index.js";
 
 /**
  * Build a manifest of local vault entries (id → { id, created_at, kind, title }).
@@ -19,7 +18,9 @@ import { indexEntry } from "../index/index.js";
  */
 export function buildLocalManifest(ctx) {
   const rows = ctx.db
-    .prepare("SELECT id, created_at, kind, title FROM vault WHERE (expires_at IS NULL OR expires_at > datetime('now'))")
+    .prepare(
+      "SELECT id, created_at, kind, title FROM vault WHERE (expires_at IS NULL OR expires_at > datetime('now'))",
+    )
     .all();
 
   const manifest = new Map();
@@ -111,7 +112,10 @@ export function computeSyncPlan(local, remote) {
  * @param {{ hostedUrl: string, apiKey: string, plan: SyncPlan, onProgress?: (phase: string, current: number, total: number) => void }} opts
  * @returns {Promise<{ pushed: number, pulled: number, failed: number, errors: string[] }>}
  */
-export async function executeSync(ctx, { hostedUrl, apiKey, plan, onProgress }) {
+export async function executeSync(
+  ctx,
+  { hostedUrl, apiKey, plan, onProgress },
+) {
   let pushed = 0;
   let pulled = 0;
   let failed = 0;
@@ -157,7 +161,9 @@ export async function executeSync(ctx, { hostedUrl, apiKey, plan, onProgress }) 
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}));
           failed += batch.length;
-          errors.push(`Push batch failed: HTTP ${response.status} — ${errData.error || "unknown"}`);
+          errors.push(
+            `Push batch failed: HTTP ${response.status} — ${errData.error || "unknown"}`,
+          );
           continue;
         }
 
@@ -199,21 +205,20 @@ export async function executeSync(ctx, { hostedUrl, apiKey, plan, onProgress }) 
         if (onProgress) onProgress("pull", i + 1, entriesToPull.length);
 
         try {
-          await captureAndIndex(
-            ctx,
-            {
-              kind: entry.kind,
-              title: entry.title,
-              body: entry.body,
-              meta: entry.meta && typeof entry.meta === "object" ? entry.meta : undefined,
-              tags: Array.isArray(entry.tags) ? entry.tags : undefined,
-              source: entry.source || "sync-pull",
-              identity_key: entry.identity_key,
-              expires_at: entry.expires_at,
-              userId: ctx.userId || null,
-            },
-            indexEntry
-          );
+          await captureAndIndex(ctx, {
+            kind: entry.kind,
+            title: entry.title,
+            body: entry.body,
+            meta:
+              entry.meta && typeof entry.meta === "object"
+                ? entry.meta
+                : undefined,
+            tags: Array.isArray(entry.tags) ? entry.tags : undefined,
+            source: entry.source || "sync-pull",
+            identity_key: entry.identity_key,
+            expires_at: entry.expires_at,
+            userId: ctx.userId || null,
+          });
           pulled++;
         } catch (err) {
           failed++;
