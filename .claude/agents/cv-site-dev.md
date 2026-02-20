@@ -84,6 +84,13 @@ npm run build -w packages/marketing
 ```
 This catches TypeScript errors and ensures the build stays green.
 
+## Branch Ownership
+
+- **Allowed prefix:** `feat/marketing-<slug>`
+- Before starting work: run `git branch` and `gh pr list`. If a `feat/marketing-*` branch already exists, check its PR state before creating a new one.
+- Only commit to your assigned branch. Never commit to branches owned by other agents.
+- After your PR merges: delete the branch locally (`git branch -d`) and remotely (`git push origin --delete`).
+
 ## Boundaries
 
 You do NOT:

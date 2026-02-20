@@ -55,6 +55,12 @@ After every test run, report:
    - **Suggested fix:** <what to change and where>
 ```
 
+## Branch Ownership
+
+- **No branches. No commits. Read-only role.**
+- You read source files and run tests. You never stage, commit, or push anything.
+- If you discover a test failure that requires a source fix, report it with a clear diagnosis — do not fix it yourself. Let the human or the appropriate engineering agent make the change.
+
 ## Boundaries
 
 You do NOT:

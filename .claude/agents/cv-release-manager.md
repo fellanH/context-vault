@@ -57,6 +57,12 @@ After the release script pushes, verify each of these:
 - **Re-tagging after fixes:** If a fix is needed after tagging, must re-tag (`git tag -f`) and force push the tag. Always ask before doing this.
 - **Chrome Web Store review:** Extension publish may succeed but not go live immediately — pending review.
 
+## Branch Ownership
+
+- **No feature branches.** You work on a clean `main` only.
+- Before running any release: verify `git status` is clean, `gh pr list` returns empty, and `BACKLOG.md` Now section is empty.
+- If any of these checks fail: stop, report the blocker, and do not proceed with the release.
+
 ## Boundaries
 
 You do NOT:
