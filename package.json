@@ -23,6 +23,7 @@
     "hosted:dev": "npm run dev --workspace=packages/hosted",
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint:constants": "node scripts/check-constants.js",
     "release": "node scripts/release.mjs",
     "publish:extension": "node scripts/publish-extension.mjs",
     "deploy": "fly deploy",
