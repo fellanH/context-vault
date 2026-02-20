@@ -55,8 +55,8 @@ Present the plan for user approval **before writing any code**. Scale depth to c
 Wait for explicit user approval before moving to Branch.
 
 ### 4. Branch
-- Create a branch: `feat/<name>`, `fix/<name>`, or `chore/<name>`
-- Direct commits to `main` only for single-line fixes or docs
+- **Always** create a branch: `feat/<name>`, `fix/<name>`, or `chore/<name>`
+- No direct commits to `main` — branch protection enforces this (see #21)
 - GTM tasks that produce no code changes skip this step
 
 ### 5. Work
@@ -64,8 +64,10 @@ Wait for explicit user approval before moving to Branch.
 - Reference the GitHub issue: `Fixes #N` in commit messages
 
 ### 6. Ship
+- Push branch, wait for CI (`test-and-build` must pass), then merge
 - Create a PR with `Fixes #N` to auto-close the issue on merge
-- Self-merge via squash merge is fine for solo work
+- Squash merge via `gh pr merge --squash --admin` (admin bypass skips review requirement for solo work, but CI must have passed)
+- If CI fails: fix on the branch, push again, wait for green, then merge
 
 ### 7. Update
 - Update `BACKLOG.md`: move completed items, add new signals, adjust priorities
