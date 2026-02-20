@@ -1,6 +1,6 @@
 {
   "name": "@context-vault/extension",
-  "version": "2.5.1",
+  "version": "2.7.0",
   "private": true,
   "type": "module",
   "description": "Context Vault browser extension — inject vault context into AI chat interfaces",
