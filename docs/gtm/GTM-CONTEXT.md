@@ -30,6 +30,7 @@ All go-to-market strategy and tracking docs live in `docs/gtm/`:
 
 | File | Purpose |
 |------|---------|
+| `GTM-BACKLOG.md` | Prioritized GTM tasks (Now/Next/Later) with ICE scoring — start here for GTM sessions |
 | `marketing-plan.md` | Landing page architecture, SEO, events, CRO backlog |
 | `content-tracker.md` | Status of all 32 content pieces (blog, video, BIP) |
 | `weekly-log.md` | Execution journal and weekly scorecard |
