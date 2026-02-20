@@ -174,9 +174,9 @@ describe("hosted auth + management API", () => {
     expect(delRes.status).toBe(200);
   });
 
-  // ─── Vault Import/Export ───────────────────────────────────────────────────
+  // ─── Vault Entries + Export ─────────────────────────────────────────────────
 
-  it("import: valid entry returns id", async () => {
+  it("create entry: valid entry returns full object", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
@@ -189,18 +189,18 @@ describe("hosted auth + management API", () => {
       ...(regData.encryptionSecret ? { "X-Vault-Secret": regData.encryptionSecret } : {}),
     };
 
-    const res = await fetch(`${BASE}/api/vault/import`, {
+    const res = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: authHeaders,
       body: JSON.stringify({ kind: "insight", body: "Test import entry", tags: ["test"] }),
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     const data = await res.json();
     expect(data.id).toBeTruthy();
     expect(data.id).toHaveLength(26); // ULID length
   });
 
-  it("import: missing body returns 400", async () => {
+  it("create entry: missing body returns 400", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
@@ -209,7 +209,7 @@ describe("hosted auth + management API", () => {
     const { apiKey } = await regRes.json();
     const authHeaders = { Authorization: `Bearer ${apiKey.key}`, "Content-Type": "application/json" };
 
-    const res = await fetch(`${BASE}/api/vault/import`, {
+    const res = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: authHeaders,
       body: JSON.stringify({ kind: "insight" }),
@@ -219,7 +219,7 @@ describe("hosted auth + management API", () => {
     expect(data.error).toContain("body");
   });
 
-  it("import: missing kind returns 400", async () => {
+  it("create entry: missing kind returns 400", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
@@ -228,7 +228,7 @@ describe("hosted auth + management API", () => {
     const { apiKey } = await regRes.json();
     const authHeaders = { Authorization: `Bearer ${apiKey.key}`, "Content-Type": "application/json" };
 
-    const res = await fetch(`${BASE}/api/vault/import`, {
+    const res = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: authHeaders,
       body: JSON.stringify({ body: "No kind provided" }),
@@ -324,7 +324,7 @@ describe("hosted auth + management API", () => {
 
   // ─── Phase 2: Input Validation ─────────────────────────────────────────────
 
-  it("import: body >100KB returns 400", async () => {
+  it("create entry: body >100KB returns 400", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
@@ -334,7 +334,7 @@ describe("hosted auth + management API", () => {
     const authHeaders = { Authorization: `Bearer ${apiKey.key}`, "Content-Type": "application/json" };
 
     const bigBody = "x".repeat(101 * 1024);
-    const res = await fetch(`${BASE}/api/vault/import`, {
+    const res = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: authHeaders,
       body: JSON.stringify({ kind: "insight", body: bigBody }),
@@ -344,7 +344,7 @@ describe("hosted auth + management API", () => {
     expect(data.error).toContain("100KB");
   });
 
-  it("import: non-array tags returns 400", async () => {
+  it("create entry: non-array tags returns 400", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
@@ -353,7 +353,7 @@ describe("hosted auth + management API", () => {
     const { apiKey } = await regRes.json();
     const authHeaders = { Authorization: `Bearer ${apiKey.key}`, "Content-Type": "application/json" };
 
-    const res = await fetch(`${BASE}/api/vault/import`, {
+    const res = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: authHeaders,
       body: JSON.stringify({ kind: "insight", body: "test", tags: "not-an-array" }),
@@ -363,7 +363,7 @@ describe("hosted auth + management API", () => {
     expect(data.error).toContain("tags");
   });
 
-  it("import: invalid kind format returns 400", async () => {
+  it("create entry: invalid kind format returns 400", async () => {
     const regRes = await fetch(`${BASE}/api/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Forwarded-For": uniqueIp() },
@@ -372,7 +372,7 @@ describe("hosted auth + management API", () => {
     const { apiKey } = await regRes.json();
     const authHeaders = { Authorization: `Bearer ${apiKey.key}`, "Content-Type": "application/json" };
 
-    const res = await fetch(`${BASE}/api/vault/import`, {
+    const res = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: authHeaders,
       body: JSON.stringify({ kind: "INVALID KIND!!", body: "test" }),
@@ -425,8 +425,8 @@ describe("hosted auth + management API", () => {
     });
     const regDataB = await regB.json();
 
-    // User A imports an entry with unique content
-    const importRes = await fetch(`${BASE}/api/vault/import`, {
+    // User A creates an entry with unique content
+    const importRes = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${regDataA.apiKey.key}`,
@@ -435,7 +435,7 @@ describe("hosted auth + management API", () => {
       },
       body: JSON.stringify({ kind: "insight", body: "secret-alpha-unicorn-data", tags: ["isolation-test"] }),
     });
-    expect(importRes.status).toBe(200);
+    expect(importRes.status).toBe(201);
 
     // User B searches via MCP — should NOT find User A's entry
     const transportB = new StreamableHTTPClientTransport(
@@ -485,8 +485,8 @@ describe("hosted auth + management API", () => {
     });
     const regData = await regRes.json();
 
-    // Import an entry
-    const importRes = await fetch(`${BASE}/api/vault/import`, {
+    // Create an entry
+    const importRes = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${regData.apiKey.key}`,
@@ -495,7 +495,7 @@ describe("hosted auth + management API", () => {
       },
       body: JSON.stringify({ kind: "insight", body: "encrypted-roundtrip-test-content", tags: ["encryption"] }),
     });
-    expect(importRes.status).toBe(200);
+    expect(importRes.status).toBe(201);
 
     // Search via MCP — should return decrypted content
     const transport = new StreamableHTTPClientTransport(
@@ -534,8 +534,8 @@ describe("hosted auth + management API", () => {
     });
     const regDataB = await regB.json();
 
-    // User A imports an entry and gets the ID
-    const importRes = await fetch(`${BASE}/api/vault/import`, {
+    // User A creates an entry and gets the ID
+    const importRes = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${regDataA.apiKey.key}`,
@@ -544,6 +544,7 @@ describe("hosted auth + management API", () => {
       },
       body: JSON.stringify({ kind: "insight", body: "cross-user-delete-test-data", tags: ["delete-test"] }),
     });
+    expect(importRes.status).toBe(201);
     const { id: entryId } = await importRes.json();
     expect(entryId).toBeTruthy();
 
@@ -629,8 +630,8 @@ describe("hosted auth + management API", () => {
     });
     const regData = await regRes.json();
 
-    // Import an entry so usage is non-zero
-    await fetch(`${BASE}/api/vault/import`, {
+    // Create an entry so usage is non-zero
+    const createRes = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${regData.apiKey.key}`,
@@ -639,6 +640,7 @@ describe("hosted auth + management API", () => {
       },
       body: JSON.stringify({ kind: "insight", body: "usage tracking test" }),
     });
+    expect(createRes.status).toBe(201);
 
     const res = await fetch(`${BASE}/api/billing/usage`, {
       headers: { Authorization: `Bearer ${regData.apiKey.key}` },
@@ -716,12 +718,13 @@ describe("hosted auth + management API", () => {
       ...(regData.encryptionSecret ? { "X-Vault-Secret": regData.encryptionSecret } : {}),
     };
 
-    // Import an entry
-    await fetch(`${BASE}/api/vault/import`, {
+    // Create an entry
+    const createRes = await fetch(`${BASE}/api/vault/entries`, {
       method: "POST",
       headers: authHeaders,
       body: JSON.stringify({ kind: "insight", body: "will be deleted", tags: ["delete-test"] }),
     });
+    expect(createRes.status).toBe(201);
 
     // Delete account
     const delRes = await fetch(`${BASE}/api/account`, {

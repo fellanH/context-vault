@@ -18,6 +18,64 @@ import { normalizeKind } from "../core/files.js";
 import { ok, err, ensureVaultExists, ensureValidKind } from "./helpers.js";
 import { isEmbedAvailable } from "../index/embed.js";
 
+// ─── Input size limits (mirrors hosted validation) ────────────────────────────
+const MAX_BODY_LENGTH = 100 * 1024; // 100KB
+const MAX_TITLE_LENGTH = 500;
+const MAX_KIND_LENGTH = 64;
+const MAX_TAG_LENGTH = 100;
+const MAX_TAGS_COUNT = 20;
+const MAX_META_LENGTH = 10 * 1024; // 10KB
+const MAX_SOURCE_LENGTH = 200;
+const MAX_IDENTITY_KEY_LENGTH = 200;
+const MAX_URL_LENGTH = 2048;
+
+/**
+ * Validate input fields for save_context. Returns an error response or null.
+ */
+function validateSaveInput({ kind, title, body, tags, meta, source, identity_key }) {
+  if (kind !== undefined && kind !== null) {
+    if (typeof kind !== "string" || kind.length > MAX_KIND_LENGTH) {
+      return err(`kind must be a string, max ${MAX_KIND_LENGTH} chars`, "INVALID_INPUT");
+    }
+  }
+  if (body !== undefined && body !== null) {
+    if (typeof body !== "string" || body.length > MAX_BODY_LENGTH) {
+      return err(`body must be a string, max ${MAX_BODY_LENGTH / 1024}KB`, "INVALID_INPUT");
+    }
+  }
+  if (title !== undefined && title !== null) {
+    if (typeof title !== "string" || title.length > MAX_TITLE_LENGTH) {
+      return err(`title must be a string, max ${MAX_TITLE_LENGTH} chars`, "INVALID_INPUT");
+    }
+  }
+  if (tags !== undefined && tags !== null) {
+    if (!Array.isArray(tags)) return err("tags must be an array of strings", "INVALID_INPUT");
+    if (tags.length > MAX_TAGS_COUNT) return err(`tags: max ${MAX_TAGS_COUNT} tags allowed`, "INVALID_INPUT");
+    for (const tag of tags) {
+      if (typeof tag !== "string" || tag.length > MAX_TAG_LENGTH) {
+        return err(`each tag must be a string, max ${MAX_TAG_LENGTH} chars`, "INVALID_INPUT");
+      }
+    }
+  }
+  if (meta !== undefined && meta !== null) {
+    const metaStr = JSON.stringify(meta);
+    if (metaStr.length > MAX_META_LENGTH) {
+      return err(`meta must be under ${MAX_META_LENGTH / 1024}KB when serialized`, "INVALID_INPUT");
+    }
+  }
+  if (source !== undefined && source !== null) {
+    if (typeof source !== "string" || source.length > MAX_SOURCE_LENGTH) {
+      return err(`source must be a string, max ${MAX_SOURCE_LENGTH} chars`, "INVALID_INPUT");
+    }
+  }
+  if (identity_key !== undefined && identity_key !== null) {
+    if (typeof identity_key !== "string" || identity_key.length > MAX_IDENTITY_KEY_LENGTH) {
+      return err(`identity_key must be a string, max ${MAX_IDENTITY_KEY_LENGTH} chars`, "INVALID_INPUT");
+    }
+  }
+  return null;
+}
+
 /**
  * Register all MCP tools on the server.
  *
@@ -250,6 +308,9 @@ export function registerTools(server, ctx) {
     tracked(async ({ id, kind, title, body, tags, meta, folder, source, identity_key, expires_at }) => {
       const vaultErr = ensureVaultExists(config);
       if (vaultErr) return vaultErr;
+
+      const inputErr = validateSaveInput({ kind, title, body, tags, meta, source, identity_key });
+      if (inputErr) return inputErr;
 
       // ── Update mode ──
       if (id) {
@@ -501,6 +562,21 @@ export function registerTools(server, ctx) {
       if (vaultErr) return vaultErr;
 
       if (!targetUrl?.trim()) return err("Required: url (non-empty string)", "INVALID_INPUT");
+      if (targetUrl.length > MAX_URL_LENGTH) return err(`url must be under ${MAX_URL_LENGTH} chars`, "INVALID_INPUT");
+      if (kind !== undefined && kind !== null) {
+        if (typeof kind !== "string" || kind.length > MAX_KIND_LENGTH) {
+          return err(`kind must be a string, max ${MAX_KIND_LENGTH} chars`, "INVALID_INPUT");
+        }
+      }
+      if (tags !== undefined && tags !== null) {
+        if (!Array.isArray(tags)) return err("tags must be an array of strings", "INVALID_INPUT");
+        if (tags.length > MAX_TAGS_COUNT) return err(`tags: max ${MAX_TAGS_COUNT} tags allowed`, "INVALID_INPUT");
+        for (const tag of tags) {
+          if (typeof tag !== "string" || tag.length > MAX_TAG_LENGTH) {
+            return err(`each tag must be a string, max ${MAX_TAG_LENGTH} chars`, "INVALID_INPUT");
+          }
+        }
+      }
 
       await ensureIndexed();
 
@@ -554,7 +630,7 @@ export function registerTools(server, ctx) {
         `Data dir:  ${config.dataDir}`,
         `Config:    ${config.configPath}`,
         `Resolved via: ${status.resolvedFrom}`,
-        `Schema:    v6 (multi-tenancy)`,
+        `Schema:    v7 (teams)`,
       ];
 
       if (status.embeddingStatus) {
