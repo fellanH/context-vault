@@ -30,13 +30,15 @@
 Every Claude Code working session follows this workflow:
 
 ### 1. Orient
-- Read `BACKLOG.md` to understand current priorities
-- Check `Now` section for active work items
+- Read `BACKLOG.md` to understand current engineering priorities
+- For GTM sessions: also read `docs/gtm/GTM-BACKLOG.md` and `docs/gtm/GTM-CONTEXT.md`
+- Check `Now` section for active work items (in whichever backlog applies)
 - Query context vault for recent sessions and decisions: `get_context` with tags `context-vault`
 
 ### 2. Pick
 - Work on an item from `Now`, or triage if the user requests it
 - If `Now` is empty, pull the highest-ICE item from `Next`
+- For GTM work: pick from `docs/gtm/GTM-BACKLOG.md` instead
 
 ### 3. Pitch
 Present the plan for user approval **before writing any code**. Scale depth to complexity:
@@ -55,6 +57,7 @@ Wait for explicit user approval before moving to Branch.
 ### 4. Branch
 - Create a branch: `feat/<name>`, `fix/<name>`, or `chore/<name>`
 - Direct commits to `main` only for single-line fixes or docs
+- GTM tasks that produce no code changes skip this step
 
 ### 5. Work
 - Implement, test, commit with conventional commit messages
@@ -117,9 +120,35 @@ End-of-session retrospective. Scale depth to session complexity:
 - Re-score `Next` items if priorities shifted
 - Pull top items into `Now` (max 3)
 
+### GTM Task Workflow
+
+GTM tasks follow the same session protocol but differ in execution:
+
+| Step | Engineering | GTM |
+|------|------------|-----|
+| Orient | Read `BACKLOG.md` | Read `GTM-BACKLOG.md` + `GTM-CONTEXT.md` |
+| Pick | Pull from Now/Next | Same |
+| Pitch | Plan before code | Plan before action (what, where, expected outcome) |
+| Branch | Create git branch | Skip unless task produces code |
+| Work | Code + test + commit | Draft, review, publish, or configure |
+| Ship | PR + merge | Post/publish/submit + verify live |
+| Update | Update BACKLOG.md | Update GTM-BACKLOG.md + weekly-log.md |
+| Review | Session retro | Same format, add `gtm` tag |
+
+**GTM "Ship" definitions by type:**
+- **Distribution:** post is live, link verified
+- **Onboarding:** walkthrough complete, bugs filed
+- **Instrumentation:** events firing in production
+- **Community:** channel created and linked from README
+- **Sales:** asset committed in `docs/gtm/`
+
+**When GTM work requires code** (instrumentation, landing page edits): use full engineering workflow with branch + PR. GTM backlog item stays open until both code ships AND GTM outcome is verified.
+
 ## GTM Context
 
-For marketing, sales, and content work, read `docs/gtm/GTM-CONTEXT.md` which contains ICP, CTAs, content pillars, and the GTM docs index.
+For marketing, sales, and content work:
+- **Backlog:** `docs/gtm/GTM-BACKLOG.md` — prioritized GTM tasks (Now/Next/Later with ICE scoring)
+- **Context:** `docs/gtm/GTM-CONTEXT.md` — ICP, CTAs, content pillars, and GTM docs index
 
 # currentDate
 Today's date is 2026-02-20.
