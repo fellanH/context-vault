@@ -1,165 +1,171 @@
-# Context Vault — Project Context
+# Context Vault — Agent Operating Protocol
 
-Persistent memory layer for AI agents via MCP. Markdown files + SQLite FTS + semantic embeddings.
+Persistent memory layer for AI agents via MCP. Markdown + SQLite FTS + semantic embeddings.
 
-| Resource   | URL                                                                                            |
-| ---------- | ---------------------------------------------------------------------------------------------- |
-| Repo       | `https://github.com/fellanH/context-vault`                                                     |
-| Marketing  | `https://contextvault.dev`                                                                     |
-| App        | `https://context-vault.com`                                                                    |
-| Quickstart | `https://github.com/fellanH/context-vault/blob/main/docs/distribution/connect-in-2-minutes.md` |
+| Resource | URL |
+|----------|-----|
+| Repo | https://github.com/fellanH/context-vault |
+| App | https://app.context-vault.com |
+| Marketing | https://contextvault.dev |
+| API | https://api.context-vault.com |
 
 ## Tone
+Technical, honest about trade-offs. No hype, no fabricated metrics. Developer-to-developer.
 
-- Technical, helpful, honest about trade-offs
-- No hype, no fabricated metrics — show real commands, real output
-- Speak as a developer building tools for other developers
+---
 
 ## Session Protocol
 
-Full reference: see `DEV-PLAYBOOK.md` in the project root.
+### On every session start — before anything else
 
-Every Claude Code working session follows this workflow:
+**Step 0: Load north star**
+Read `NORTH-STAR.md`. Human-authored product direction. Never modify it. Hold it for the session.
 
-### 0. Session Goal (before anything else)
+**Step 1: Derive live state — run these, do not trust docs**
+```bash
+git status && git log --oneline -5          # where are we, what's been done
+npm view context-vault version              # what's live on npm
+gh run list --workflow=deploy.yml --limit=3 # recent deploys
+```
+Read `BACKLOG.md` for priorities. Read `FEEDBACK.md` and `INBOX.md` for pending human input.
 
-Ask the user: **"What is the one thing this session should accomplish?"**
-If they haven't stated it, prompt for it. Hold this goal for the entire session.
+Surface a brief summary: what's recently shipped, highest-priority next item.
+If not on main — flag it and ask why before proceeding.
 
-If the user makes a request that doesn't serve the declared goal, name the conflict and offer:
+**Step 2: Receive session goal**
+Human declares: `Session goal: [one sentence]`
+If not provided, ask for it before proceeding.
 
-1. **Capture it** — add to `INBOX.md` and keep going
-2. **Pivot** — explicitly stop current work, move to `Next`, start the new thing
-3. **Queue it** — handle after the current task is done
+**Step 3: Self-governance check — before writing any code**
+1. Does this conflict with any other in-progress work? (git status)
+2. Does this serve the product direction? (NORTH-STAR.md)
+3. **Go** → pitch approach, wait for approval, proceed
+4. **Hold** → name the conflict, wait for human decision
 
-Never silently pivot. The user always chooses.
+---
 
-### Quick Capture (handle at any point in the session)
+## Input Commands (handle at any point)
 
-If the user's message starts with `capture:` — or if they're clearly in idea-generation mode (several short "what about X / we should also Y" prompts in a row) — do NOT implement. Instead:
+**`capture: [idea]`** → append to `INBOX.md`: `YYYY-MM-DD — [idea]`
+Confirm in one line. Return to whatever was in progress.
 
-- Append the idea to `INBOX.md` in the format: `YYYY-MM-DD — [idea]`
-- Confirm it's logged in one line
-- Return immediately to whatever was in progress
+**`feedback: [observation]`** → append to `FEEDBACK.md`: `YYYY-MM-DD [UX/DEV] — [observation]`
+`[UX]` = user experience. `[DEV]` = developer experience. Confirm and return.
 
-If the user sends 3+ short generative prompts in a row, shift to capture mode and say:
-_"Looks like you're in capture mode — I'll log these and pause implementation. Keep going, what else?"_
+If 3+ short generative prompts in a row: shift to capture mode —
+*"Looks like you're in capture mode — logging these, pausing implementation. Keep going."*
 
-For explicit brainstorm sessions: `chaos mode on` → everything goes to INBOX.md until `chaos mode off`.
+`chaos mode on` → everything to INBOX.md until `chaos mode off`
 
-### 1. Orient
+---
 
-- Run `gh pr list` — any open PRs? Must resolve (merge/close/continue) before starting new work
-- Read `BACKLOG.md` — check `Now` against session goal; they should match
-- Glance at `INBOX.md` — note what accumulated; don't process it here
-- Run `git branch` — clean up stale local branches
-- Query context vault: `get_context` with tags `context-vault`
+## The Work Cycle
 
-### 2. Pick
+### Default: work on main
+Commit directly to main. Push triggers CI. CI success triggers staging → production. No PRs, no branches.
 
-- One item from `Now` that matches the session goal (or pull highest-ICE from `Next` if `Now` is empty)
-- GTM work: pick from `docs/gtm/GTM-BACKLOG.md`
-- Hard cap: 3 items in `Now` at any time
+### Branch only when:
+- Two or more agents working in parallel (they'd conflict on main)
+- Experimental work you might abandon
 
-### 3. Pitch
+Branch naming when needed: `feat/<scope>-<slug>` · `fix/<scope>-<slug>` · `chore/<slug>`
+Scope: `marketing · hosted · cli · extension · core · infra`
 
-Present plan for user approval **before writing code**.
+### Work
+- Implement, test, conventional commits (`feat:`, `fix:`, `chore:`)
+- Reference issues in commits: `Fixes #N`
+- Code self-documents. No inline comments unless logic is genuinely non-obvious.
 
-- **Non-trivial**: Why this/why now, 2–3 options with trade-offs, scope & risk
-- **Trivial**: One-line summary, proceed after approval
-- **Open PR check**: If a PR is already open, explicitly merge it, close it, or confirm continuing it — never start new work on top silently
+### Ship
+`git push origin main` → CI runs → deploy pipeline triggers automatically
 
-### 4. Branch
-
-- Create `feat/<scope>-<slug>`, `fix/<scope>-<slug>`, or `chore/<slug>` — no direct commits to `main` (#21)
-- Scope = the primary package changed: `marketing | hosted | cli | extension | core | infra`
-- One agent, one branch. Never commit to a branch owned by another agent in the same session
-- GTM-only tasks with no code changes skip this step
-- See branch prefix map in `DEV-PLAYBOOK.md`
-
-### 5. Work
-
-- Implement, test, commit with conventional messages
-- Reference issues: `Fixes #N`
-
-### 6. Ship
-
-- Push, wait for CI, then `gh pr merge --squash --admin`
-- PR body includes `Fixes #N` to auto-close issues
-- Move item from `Now` → `Done` in `BACKLOG.md`
-
-### 7. Update
-
-- Update `BACKLOG.md`: move completed items, add signals, adjust priorities
+### Update
+- Move BACKLOG.md item: `Now` → `Done`
 - File GitHub issues for newly discovered work
-- Do not add documentation for anything derivable from code
+- No docs for anything derivable from code
 
-### 8. Review
+### Session wrap (triggered by `Session wrap.`)
+- Run state derivation — confirm what actually shipped
+- Correct BACKLOG.md if it drifted
+- Dump surfaced ideas/feedback to INBOX.md or FEEDBACK.md
+- Save session review: `save_context` (kind: `session-review`, tags: `context-vault, retro`)
+- Tell human what's ready for next session
 
-End-of-session retrospective: **Shipped**, **Went well**, **Friction**, **Learned**, **Actions**.
+---
 
-- Dump any ideas that surfaced during the session → `INBOX.md`
-- Delete merged branches: `git branch -d <branch>` locally + `git push origin --delete <branch>`
-- Persist: `save_context` (kind: `session-review`, tags: `context-vault, retro`)
-- Durable lessons → memory files or CLAUDE.md. Actionable friction → issues or backlog
+## Deploy Pipeline
 
-### Branch naming
+Push to main → CI tests → staging deploy → health check → smoke → production.
+Path-scoped: only packages with changed files get deployed.
 
-| Prefix   | Use                  |
-| -------- | -------------------- |
-| `feat/`  | New features         |
-| `fix/`   | Bug fixes            |
-| `chore/` | Infra, deps, cleanup |
+| Package | Trigger | Target |
+|---------|---------|--------|
+| packages/local | git tag `v*` | npm |
+| packages/hosted | main push (hosted or core changed) | Fly.io staging → prod |
+| packages/app | main push (app or core changed) | Vercel staging → prod |
+| packages/marketing | main push (marketing changed) | Vercel staging → prod |
+| packages/extension | manual dispatch | Chrome Web Store |
+| packages/core | no direct deploy | bundled into local + hosted |
 
-### Sprint Tracking
+**Versioning:** bump root + core + local + extension together.
+`packages/hosted` is 0.x — never bump with the others.
 
-BACKLOG.md `Now` must mirror open PRs at all times:
+---
 
-| Event                   | Action                   |
-| ----------------------- | ------------------------ |
-| PR opened               | Move item to `Now`       |
-| PR merged               | Move item to `Done`      |
-| PR closed without merge | Move item back to `Next` |
+## Triage (agent-led, human-invoked)
 
-Hard cap: 3 items in `Now`. If `Now` has an item with no matching open PR, stop and investigate before proceeding.
+Human prompt: `Triage. No code.`
 
-### Issue labels
+Agent:
+1. Derive state from git — what actually shipped recently
+2. Read FEEDBACK.md — translate entries into scored backlog items
+3. Read INBOX.md — ICE score each, move to Next/Later/discard
+4. Re-score Next based on feedback signals
+5. Correct BACKLOG.md Now to match active work
+6. Tell human what to pull into Now
 
-| Label          | Purpose                          |
-| -------------- | -------------------------------- |
-| `bug`          | Something broken                 |
-| `feature`      | New capability                   |
-| `enhancement`  | Improvement to existing          |
-| `dx`           | Developer experience             |
-| `infra`        | CI/CD, deployment                |
-| `gtm`          | Marketing, sales, content        |
-| `user-request` | Directly from a user             |
-| `P0`–`P3`      | Priority (critical → eventually) |
+ICE = Impact(1–5) × Confidence(1–5) × Ease(1–5). Feedback drives Impact. Human never scores manually.
 
-### ICE scoring
+---
 
-Score = Impact(1-5) × Confidence(1-5) × Ease(1-5). Highest → top of `Next`.
+## Agent Boundaries
 
-### Weekly triage
+| Agent | Allowed paths | Notes |
+|-------|---------------|-------|
+| cv-site-dev | packages/marketing/ only | |
+| cv-content-writer | docs/gtm/, packages/marketing/src/app/content/posts.ts | |
+| cv-campaigns | docs/gtm/assets/ | |
+| cv-sales-ops | docs/gtm/ pipeline files | |
+| cv-release-manager | version files, CHANGELOG, git tags | Clean main only |
+| cv-test-runner | read-only — no commits | |
+| Claude CLI | any package | Default for all code work |
 
-Review feedback entries + issues, add community signals, re-score `Next`, pull top items into `Now` (max 3).
+---
 
-### GTM Workflow
+## Sprint Tracking
 
-Same protocol, different sources:
+BACKLOG.md `Now` reflects active work. Agents correct drift when they see it.
 
-| Step   | Engineering  | GTM                                 |
-| ------ | ------------ | ----------------------------------- |
-| Orient | `BACKLOG.md` | `GTM-BACKLOG.md` + `GTM-CONTEXT.md` |
-| Branch | Always       | Skip unless code changes needed     |
-| Ship   | PR + merge   | Post/publish + verify live          |
-| Update | `BACKLOG.md` | `GTM-BACKLOG.md` + `weekly-log.md`  |
+| Event | Action |
+|-------|--------|
+| Work started | Move item to Now |
+| Pushed to main | Move item to Done |
+| Work abandoned | Move item back to Next |
 
-**GTM "Ship" definitions:** Distribution = post live + link verified. Onboarding = walkthrough complete. Instrumentation = events firing. Community = channel created. Sales = asset committed.
+Hard cap: 3 items in `Now`.
 
-When GTM requires code: full engineering workflow. GTM item stays open until both code ships AND outcome is verified.
+---
 
-## GTM Context
+## GTM Workflow
 
-- **Backlog:** `docs/gtm/GTM-BACKLOG.md`
-- **Context:** `docs/gtm/GTM-CONTEXT.md` — ICP, CTAs, content pillars
+| Step | Engineering | GTM |
+|------|------------|-----|
+| Orient | BACKLOG.md | GTM-BACKLOG.md + GTM-CONTEXT.md |
+| Ship | push to main | post/publish + verify live |
+| Update | BACKLOG.md | GTM-BACKLOG.md + weekly-log.md |
+
+---
+
+## Issue Labels
+
+`bug` · `feature` · `enhancement` · `dx` · `infra` · `gtm` · `user-request` · `P0`–`P3`

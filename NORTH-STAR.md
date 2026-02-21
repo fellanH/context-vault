@@ -3,7 +3,7 @@
 ## What this is
 
 Context Vault is about owning your data and storing it long term in a human readable format,  
-it allow you to give any AI agent you use now or in the future persistent memory. 
+it allow you to give any AI agent you use now or in the future persistent memory.
 Anyone can install it into any workflow very easily and their agents remember things across sessions.
 
 ## Who it's for
