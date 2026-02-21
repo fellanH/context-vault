@@ -2,6 +2,12 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.10] — 2026-02-21
+
+### Fixed
+
+- MCP server no longer fails to start in Claude Code and other tools with restricted `PATH` — setup now records the full path to the node binary (`process.execPath`) instead of bare `"node"`
+
 ## [2.8.9] — 2026-02-21
 
 ### Changed
