@@ -2,6 +2,16 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.5] — 2026-02-21
+
+### Fixed
+
+- `context-vault ui` now correctly starts the local REST API server (`local-server.js`) and opens `https://app.context-vault.com?local=<port>` — the dead `app-dist` check was causing an early return that opened the cloud UI without the `?local=` param and never started the local server
+
+### Removed
+
+- Stale post-extraction artifacts: `.dockerignore`, dead `app-dist` bundling in `prepack.js`, workspace dist fallback in `local-server.js`, `"app-dist/"` entry from `packages/local` files array
+
 ## [2.8.4] — 2026-02-21
 
 ### Fixed
