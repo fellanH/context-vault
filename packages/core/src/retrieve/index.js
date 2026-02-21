@@ -16,8 +16,8 @@ const VEC_WEIGHT = 0.6;
  */
 export function buildFtsQuery(query) {
   const words = query
-    .split(/\s+/)
-    .map((w) => w.replace(/[*"()\-:^~{}]/g, ""))
+    .split(/[\s-]+/)
+    .map((w) => w.replace(/[*"():^~{}]/g, ""))
     .filter((w) => w.length > 0);
   if (!words.length) return null;
   return words.map((w) => `"${w}"`).join(" AND ");

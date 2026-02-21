@@ -45,9 +45,8 @@ describe("buildFtsQuery", () => {
     expect(buildFtsQuery("  hello   world  ")).toBe('"hello" AND "world"');
   });
 
-  it("preserves hyphens inside words after stripping", () => {
-    // Hyphens are stripped by the regex
-    expect(buildFtsQuery("well-known")).toBe('"wellknown"');
+  it("splits hyphenated words into separate terms", () => {
+    expect(buildFtsQuery("well-known")).toBe('"well" AND "known"');
   });
 });
 

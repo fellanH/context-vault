@@ -26,6 +26,7 @@ function validateSaveInput({
   meta,
   source,
   identity_key,
+  expires_at,
 }) {
   if (kind !== undefined && kind !== null) {
     if (typeof kind !== "string" || kind.length > MAX_KIND_LENGTH) {
@@ -91,6 +92,14 @@ function validateSaveInput({
         `identity_key must be a string, max ${MAX_IDENTITY_KEY_LENGTH} chars`,
         "INVALID_INPUT",
       );
+    }
+  }
+  if (expires_at !== undefined && expires_at !== null) {
+    if (
+      typeof expires_at !== "string" ||
+      isNaN(new Date(expires_at).getTime())
+    ) {
+      return err("expires_at must be a valid ISO date string", "INVALID_INPUT");
     }
   }
   return null;
@@ -178,6 +187,7 @@ export async function handler(
     meta,
     source,
     identity_key,
+    expires_at,
   });
   if (inputErr) return inputErr;
 
