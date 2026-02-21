@@ -52,14 +52,15 @@ writeFileSync(corePkgPath, JSON.stringify(corePkg, null, 2) + "\n");
 
 console.log("[prepack] Bundled @context-vault/core into node_modules");
 
-// Copy pre-built web dashboard into app-dist/
+// Copy pre-built web dashboard into app-dist/ (optional — UI falls back to cloud)
 if (!existsSync(join(APP_SRC, "index.html"))) {
-  console.error(
-    "[prepack] ERROR: Web dashboard not built. Run: npm run build --workspace=packages/app",
+  console.warn(
+    "[prepack] WARNING: Web dashboard not built — app-dist/ will not be bundled.\n" +
+      "[prepack] `context-vault ui` will open app.context-vault.com instead.\n" +
+      "[prepack] To bundle locally: build packages/app first.",
   );
-  process.exit(1);
+} else {
+  rmSync(APP_DEST, { recursive: true, force: true });
+  cpSync(APP_SRC, APP_DEST, { recursive: true });
+  console.log("[prepack] Bundled web dashboard into app-dist/");
 }
-
-rmSync(APP_DEST, { recursive: true, force: true });
-cpSync(APP_SRC, APP_DEST, { recursive: true });
-console.log("[prepack] Bundled web dashboard into app-dist/");

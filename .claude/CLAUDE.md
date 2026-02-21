@@ -131,11 +131,10 @@ Branch protection requires both CI jobs to pass before merge.
 | packages/hosted | main push (hosted or core changed) | Fly.io production           |
 | packages/core   | no direct deploy                   | bundled into local + hosted |
 
-**npm release protocol:**
+**npm release protocol** (local — no CI publish):
 
-1. `npm version patch|minor|major -w packages/local` (also bump root + core to match)
-2. `git push origin main && git push --tags`
-3. CI runs → publish.yml picks up `v*` tag → tests → publishes to npm → creates GitHub release
+1. Update `CHANGELOG.md` with the new version section
+2. `node scripts/release.mjs patch|minor|major` — bumps versions, runs tests, publishes to npm, commits + tags + pushes
 
 **Versioning:** bump root + core + local together.
 `packages/hosted` is 0.x — never bump with the others.

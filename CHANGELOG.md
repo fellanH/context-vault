@@ -7,6 +7,13 @@ All notable changes to context-vault are documented here.
 ### Fixed
 
 - Removed stale test files (`format.test.js`, `onboarding.test.js`) that imported from `packages/app` after it was extracted to a separate repo — CI was failing on `npm test`
+- `context-vault ui` now opens `app.context-vault.com` instead of exiting with an error when no local app bundle is present
+
+### Changed
+
+- `prepack.js` warns (no longer fails) when app-dist is not pre-built — package publishes without bundled UI
+- Simplified GitHub Actions: removed `publish.yml` (CI-triggered npm publish) and `publish-extension.yml` (extension moved to separate repo); npm releases now run locally via `scripts/release.mjs`
+- Simplified Fly.io deploy pipeline: removed staging environment, smoke tests; push to main → CI → deploy production → health check
 
 ### Test suite
 

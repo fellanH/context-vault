@@ -1074,16 +1074,18 @@ function runUi() {
       : null;
 
   if (!appDist) {
-    console.error(red("Web dashboard not found."));
-    if (isInstalledPackage()) {
-      console.error(
-        dim("  Try reinstalling: npm install -g context-vault@latest"),
-      );
-    } else {
-      console.error(dim("  From repo: npm run build --workspace=packages/app"));
-      console.error(dim("  Then run: context-vault ui"));
-    }
-    process.exit(1);
+    const cloudUrl = "https://app.context-vault.com";
+    console.log(`Opening ${cloudUrl}`);
+    const open =
+      PLATFORM === "darwin"
+        ? "open"
+        : PLATFORM === "win32"
+          ? "start"
+          : "xdg-open";
+    try {
+      execSync(`${open} ${cloudUrl}`, { stdio: "ignore" });
+    } catch {}
+    return;
   }
 
   const port = parseInt(getFlag("--port") || "3141", 10);

@@ -105,15 +105,27 @@ if (!changelog.includes(`## [${newVersion}]`)) {
   process.exit(1);
 }
 
+// --- Run tests ---
+
+console.log("\n  running tests...");
+run("npm test");
+console.log("  tests passed\n");
+
+// --- Publish to npm ---
+
+console.log("  publishing to npm...");
+run("npm publish --workspace packages/local --provenance --access public");
+console.log(`  published context-vault@${newVersion}\n`);
+
 // --- Commit, tag, push ---
 
-run(`git add ${PACKAGE_FILES.join(" ")}`);
+run(`git add ${PACKAGE_FILES.join(" ")} CHANGELOG.md`);
 run(`git commit -m "v${newVersion}"`);
 run(`git tag v${newVersion}`);
 
-console.log(`\n  committed and tagged v${newVersion}`);
+console.log(`  committed and tagged v${newVersion}`);
 console.log(`  pushing to origin...\n`);
 
 run("git push origin main --tags");
 
-console.log(`  done — CI will publish to npm and create the GitHub release.\n`);
+console.log(`  done.\n`);
