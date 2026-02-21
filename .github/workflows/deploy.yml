@@ -1,4 +1,5 @@
 name: Deploy
+
 on:
   workflow_run:
     workflows: [CI]
@@ -11,7 +12,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Gate: skip deploy if CI failed (workflow_run fires on both success and failure)
   gate:
     runs-on: ubuntu-latest
     if: >
@@ -42,59 +42,35 @@ jobs:
               - 'packages/hosted/**'
               - 'packages/core/**'
 
-  deploy-backend-staging:
+  deploy:
     needs: [gate, changes]
     runs-on: ubuntu-latest
     if: needs.changes.outputs.backend == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only --config fly.staging.toml
-        env:
-          FLY_API_TOKEN: ${{ secrets.STAGING_FLY_API_TOKEN }}
-
-  health-staging:
-    needs: [deploy-backend-staging]
-    runs-on: ubuntu-latest
-    if: always() && needs.deploy-backend-staging.result == 'success'
-    steps:
-      - name: Wait for staging health
-        run: |
-          set -euo pipefail
-          URL="https://context-vault-staging.fly.dev/health"
-          for i in {1..30}; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$URL" || true)
-            if [ "$code" = "200" ]; then
-              echo "Staging healthy"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Staging health check failed"
-          exit 1
-
-  smoke-staging:
-    needs: health-staging
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: bash scripts/smoke-test.sh https://context-vault-staging.fly.dev
-
-  deploy-backend-production:
-    needs: [smoke-staging, changes]
-    runs-on: ubuntu-latest
     environment: production
-    if: needs.changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - run: flyctl deploy --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-  smoke-production:
-    needs: [deploy-backend-production]
+  health:
+    needs: deploy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: bash scripts/smoke-test.sh https://api.context-vault.com
+      - name: Wait for production health
+        run: |
+          set -euo pipefail
+          URL="https://api.context-vault.com/health"
+          for i in {1..12}; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$URL" || true)
+            if [ "$code" = "200" ]; then
+              echo "Healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Health check failed"
+          exit 1

@@ -84,7 +84,7 @@ _"Looks like you're in capture mode — logging these, pausing implementation. K
 
 ### Default: work on main
 
-Commit directly to main. Push triggers CI. CI success triggers staging → production. No PRs, no branches.
+Commit directly to main. Push triggers CI. CI success triggers deploy. No PRs, no branches.
 
 ### Branch only when:
 
@@ -122,20 +122,22 @@ Scope: `marketing · hosted · cli · extension · core · infra`
 
 ## Deploy Pipeline
 
-Push to main → CI tests → staging deploy → health check → smoke → production.
-Path-scoped: only packages with changed files get deployed.
+Push to main → CI (`test` + `check-constants`) → if backend changed → deploy production → health check.
+Branch protection requires both CI jobs to pass before merge.
 
-| Package            | Trigger                                       | Target                      |
-| ------------------ | --------------------------------------------- | --------------------------- |
-| packages/local     | git tag `v*`                                  | npm                         |
-| packages/hosted    | main push (hosted or core changed)            | Fly.io staging → prod       |
-| packages/core      | no direct deploy                              | bundled into local + hosted |
-| packages/extension | moved to fellanH/context-vault-extension repo | Chrome Web Store            |
-| packages/app       | moved to fellanH/context-vault-app repo       | Vercel staging → prod       |
-| packages/marketing | moved to fellanH/context-vault-marketing repo | Vercel staging → prod       |
+| Package         | Trigger                            | Target                      |
+| --------------- | ---------------------------------- | --------------------------- |
+| packages/local  | git tag `v*`                       | npm                         |
+| packages/hosted | main push (hosted or core changed) | Fly.io production           |
+| packages/core   | no direct deploy                   | bundled into local + hosted |
+
+**npm release protocol:**
+
+1. `npm version patch|minor|major -w packages/local` (also bump root + core to match)
+2. `git push origin main && git push --tags`
+3. CI runs → publish.yml picks up `v*` tag → tests → publishes to npm → creates GitHub release
 
 **Versioning:** bump root + core + local together.
-Extension now manages its own version in its own repo.
 `packages/hosted` is 0.x — never bump with the others.
 
 ---
