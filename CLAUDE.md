@@ -14,13 +14,12 @@ Persistent memory layer for AI agents via MCP. Markdown + SQLite FTS + semantic 
 
 ## Packages
 
-| Package  | Runtime                        | Storage                                                        |
-| -------- | ------------------------------ | -------------------------------------------------------------- |
-| `core`   | shared library                 | —                                                              |
-| `local`  | local MCP server (stdio) + CLI | `~/.context-mcp/vault.db` + `~/vault/`                         |
-| `hosted` | cloud MCP server (HTTP)        | Turso/LibSQL (meta) + per-user SQLite on Fly.io `/data/users/` |
+| Package | Runtime                        | Storage                                |
+| ------- | ------------------------------ | -------------------------------------- |
+| `core`  | shared library                 | —                                      |
+| `local` | local MCP server (stdio) + CLI | `~/.context-mcp/vault.db` + `~/vault/` |
 
-Extracted repos: app · marketing · extension (see URLs above).
+Extracted repos: app (includes `server/` backend) · marketing · extension (see URLs above).
 
 ## Product Direction
 
@@ -35,7 +34,6 @@ Derive live state before anything else:
 ```bash
 git status && git log --oneline -5
 npm view context-vault version
-gh run list --workflow=deploy.yml --limit=3
 ```
 
 Surface: what shipped, what's next. If not on main — flag it and ask why.
@@ -53,21 +51,20 @@ Surface: what shipped, what's next. If not on main — flag it and ask why.
 Commit directly to main. Push → CI → deploy. No PRs, no branches unless parallel agents would conflict.
 
 Branch naming: `feat/<scope>-<slug>` · `fix/<scope>-<slug>` · `chore/<slug>`
-Scope: `hosted · cli · core · infra`
+Scope: `cli · core · infra`
 
 Code self-documents. No inline comments. No docs for anything derivable from code.
 
 **npm release:** update `CHANGELOG.md`, then `node scripts/release.mjs patch|minor|major`
 
-Versioning: bump root + core + local together. `packages/hosted` is 0.x — never bump with the others.
+Versioning: bump root + core + local together.
 
 ## Deploy Pipeline
 
-| Package         | Trigger                            | Target            |
-| --------------- | ---------------------------------- | ----------------- |
-| packages/local  | git tag `v*`                       | npm               |
-| packages/hosted | main push (hosted or core changed) | Fly.io production |
-| packages/core   | no direct deploy                   | bundled into both |
+| Package        | Trigger      | Target |
+| -------------- | ------------ | ------ |
+| packages/local | git tag `v*` | npm    |
+| packages/core  | git tag `v*` | npm    |
 
 ## Agent Boundaries
 
