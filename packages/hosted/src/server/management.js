@@ -201,6 +201,24 @@ export function createManagementRoutes(ctx) {
       "Set-Cookie",
       `oauth_state=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=300`,
     );
+    // Store requesting frontend origin so the callback can redirect back to the right domain
+    // (supports preview deploys and local dev alongside production)
+    const requestedOrigin = c.req.query("origin");
+    const publicUrl = process.env.PUBLIC_URL || "";
+    const allowedOrigins = [
+      publicUrl,
+      ...(process.env.ALLOWED_ORIGINS || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ];
+    if (requestedOrigin && allowedOrigins.includes(requestedOrigin)) {
+      c.header(
+        "Set-Cookie",
+        `cv_origin=${requestedOrigin}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=300`,
+        { append: true },
+      );
+    }
     const url = getAuthUrl(c.req.raw, state);
     return c.redirect(url);
   });
@@ -213,7 +231,27 @@ export function createManagementRoutes(ctx) {
 
     const code = c.req.query("code");
     const error = c.req.query("error");
-    const appUrl = process.env.PUBLIC_URL || "";
+
+    // Resolve redirect origin: use per-request cv_origin cookie if set and allowed,
+    // otherwise fall back to PUBLIC_URL. Enables preview domains alongside production.
+    const cookieHeader = c.req.header("cookie") || "";
+    const originCookie = cookieHeader
+      .split(";")
+      .map((s) => s.trim())
+      .find((s) => s.startsWith("cv_origin="));
+    const requestedOrigin = originCookie?.split("=")[1];
+    const publicUrl = process.env.PUBLIC_URL || "";
+    const allowedOrigins = [
+      publicUrl,
+      ...(process.env.ALLOWED_ORIGINS || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ];
+    const appUrl =
+      requestedOrigin && allowedOrigins.includes(requestedOrigin)
+        ? requestedOrigin
+        : publicUrl;
 
     if (error) {
       // User denied consent or an error occurred — redirect to login with error
@@ -226,7 +264,6 @@ export function createManagementRoutes(ctx) {
 
     // Verify CSRF state parameter
     const state = c.req.query("state");
-    const cookieHeader = c.req.header("cookie") || "";
     const stateCookie = cookieHeader
       .split(";")
       .map((s) => s.trim())
@@ -235,10 +272,15 @@ export function createManagementRoutes(ctx) {
     if (!state || !expectedState || state !== expectedState) {
       return c.redirect(`${appUrl}/login?error=oauth_invalid_state`);
     }
-    // Clear the state cookie
+    // Clear both auth cookies
     c.header(
       "Set-Cookie",
       "oauth_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+    );
+    c.header(
+      "Set-Cookie",
+      "cv_origin=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+      { append: true },
     );
 
     const redirectUri = getRedirectUri(c.req.raw);
