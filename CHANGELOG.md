@@ -2,6 +2,14 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.6] — 2026-02-21
+
+### Removed
+
+- `ui`, `link`, and `sync` CLI commands — product is now purely local MCP server (stdio) + CLI; no web dashboard or cloud sync
+- `packages/local/scripts/local-server.js` (794-line HTTP server, no longer needed)
+- `specs/local-ui-bundle.md` (cancelled spec)
+
 ## [2.8.5] — 2026-02-21
 
 ### Fixed
