@@ -2,6 +2,13 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.8] — 2026-02-21
+
+### Changed
+
+- `npx context-vault setup` is now the canonical install command across all docs and error messages
+- Removed stale `context-vault ui` reference from README (command removed in 2.8.6)
+
 ## [2.8.7] — 2026-02-21
 
 ### Removed
