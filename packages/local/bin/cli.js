@@ -222,6 +222,7 @@ ${bold("Usage:")}
 ${bold("Commands:")}
   ${cyan("setup")}                 Interactive MCP server installer
   ${cyan("connect")} --key cv_...  Connect AI tools to hosted vault
+  ${cyan("switch")} local|hosted      Switch between local and hosted MCP modes
   ${cyan("serve")}                 Start the MCP server (used by AI clients)
   ${cyan("ui")} [--port 3141]      Launch web dashboard
   ${cyan("reindex")}               Rebuild search index from knowledge files
@@ -451,6 +452,7 @@ async function runSetup() {
   vaultConfig.dataDir = dataDir;
   vaultConfig.dbPath = join(dataDir, "vault.db");
   vaultConfig.devDir = join(HOME, "dev");
+  vaultConfig.mode = "local";
   writeFileSync(configPath, JSON.stringify(vaultConfig, null, 2) + "\n");
   console.log(`\n  ${green("+")} Wrote ${configPath}`);
 
@@ -635,10 +637,11 @@ async function configureClaude(tool, vaultDir) {
 
   try {
     if (isInstalledPackage()) {
-      const cmdArgs = ["serve"];
+      const launcherPath = join(HOME, ".context-mcp", "server.mjs");
+      const cmdArgs = [`"${launcherPath}"`];
       if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
       execSync(
-        `claude mcp add -s user context-vault -- context-vault ${cmdArgs.join(" ")}`,
+        `claude mcp add -s user context-vault -- node ${cmdArgs.join(" ")}`,
         { stdio: "pipe", env },
       );
     } else {
@@ -667,12 +670,12 @@ async function configureCodex(tool, vaultDir) {
 
   try {
     if (isInstalledPackage()) {
-      const cmdArgs = ["serve"];
+      const launcherPath = join(HOME, ".context-mcp", "server.mjs");
+      const cmdArgs = [`"${launcherPath}"`];
       if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
-      execSync(
-        `codex mcp add context-vault -- context-vault ${cmdArgs.join(" ")}`,
-        { stdio: "pipe" },
-      );
+      execSync(`codex mcp add context-vault -- node ${cmdArgs.join(" ")}`, {
+        stdio: "pipe",
+      });
     } else {
       const cmdArgs = [`"${SERVER_PATH}"`];
       if (vaultDir) cmdArgs.push("--vault-dir", `"${vaultDir}"`);
@@ -715,11 +718,12 @@ function configureJsonTool(tool, vaultDir) {
   delete config[tool.configKey]["context-mcp"];
 
   if (isInstalledPackage()) {
-    const serverArgs = ["serve"];
+    const launcherPath = join(HOME, ".context-mcp", "server.mjs");
+    const serverArgs = [];
     if (vaultDir) serverArgs.push("--vault-dir", vaultDir);
     config[tool.configKey]["context-vault"] = {
-      command: "context-vault",
-      args: serverArgs,
+      command: "node",
+      args: [launcherPath, ...serverArgs],
     };
   } else {
     const serverArgs = [SERVER_PATH];
@@ -948,6 +952,19 @@ async function runConnect() {
     }
   }
 
+  // Persist mode in config
+  const modeConfigPath = join(HOME, ".context-mcp", "config.json");
+  let modeConfig = {};
+  if (existsSync(modeConfigPath)) {
+    try {
+      modeConfig = JSON.parse(readFileSync(modeConfigPath, "utf-8"));
+    } catch {}
+  }
+  modeConfig.mode = "hosted";
+  modeConfig.hostedUrl = hostedUrl;
+  mkdirSync(join(HOME, ".context-mcp"), { recursive: true });
+  writeFileSync(modeConfigPath, JSON.stringify(modeConfig, null, 2) + "\n");
+
   console.log();
   console.log(
     green("  ✓ Connected! Your AI tools can now access your hosted vault."),
@@ -1031,6 +1048,135 @@ function configureJsonToolHosted(tool, apiKey, hostedUrl) {
   };
 
   writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+}
+
+async function runSwitch() {
+  const target = args[1];
+  if (target !== "local" && target !== "hosted") {
+    console.log(`\n  ${bold("context-vault switch")} <local|hosted>\n`);
+    console.log(`  Switch between local and hosted MCP modes.\n`);
+    console.log(
+      `  ${cyan("switch local")}    Use local vault (SQLite + files on this device)`,
+    );
+    console.log(
+      `  ${cyan("switch hosted")}   Use hosted vault (requires API key)\n`,
+    );
+    console.log(`  Options:`);
+    console.log(`    --key <key>   API key for hosted mode (cv_...)`);
+    console.log(
+      `    --url <url>   Hosted server URL (default: https://api.context-vault.com)\n`,
+    );
+    return;
+  }
+
+  const dataDir = join(HOME, ".context-mcp");
+  const configPath = join(dataDir, "config.json");
+  let vaultConfig = {};
+  if (existsSync(configPath)) {
+    try {
+      vaultConfig = JSON.parse(readFileSync(configPath, "utf-8"));
+    } catch {}
+  }
+
+  const { detected } = await detectAllTools();
+
+  if (target === "local") {
+    const launcherPath = join(dataDir, "server.mjs");
+    if (!existsSync(launcherPath)) {
+      const serverAbs = resolve(ROOT, "src", "server", "index.js");
+      mkdirSync(dataDir, { recursive: true });
+      writeFileSync(launcherPath, `import "${serverAbs}";\n`);
+    }
+
+    vaultConfig.mode = "local";
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(configPath, JSON.stringify(vaultConfig, null, 2) + "\n");
+
+    console.log();
+    console.log(`  ${bold("◇ context-vault")} ${dim("switch → local")}`);
+    console.log();
+
+    const defaultVDir = join(HOME, "vault");
+    const customVaultDir =
+      vaultConfig.vaultDir &&
+      resolve(vaultConfig.vaultDir) !== resolve(defaultVDir)
+        ? vaultConfig.vaultDir
+        : null;
+
+    for (const tool of detected) {
+      try {
+        if (tool.configType === "cli" && tool.id === "codex") {
+          await configureCodex(tool, customVaultDir);
+        } else if (tool.configType === "cli") {
+          await configureClaude(tool, customVaultDir);
+        } else {
+          configureJsonTool(tool, customVaultDir);
+        }
+        console.log(`  ${green("+")} ${tool.name} — switched to local`);
+      } catch (e) {
+        console.log(`  ${red("x")} ${tool.name} — ${e.message}`);
+      }
+    }
+    console.log();
+    console.log(green("  ✓ Switched to local mode."));
+    console.log(dim(`  Server: node ${launcherPath}`));
+    console.log();
+  } else {
+    const hostedUrl =
+      getFlag("--url") ||
+      vaultConfig.hostedUrl ||
+      "https://api.context-vault.com";
+    const apiKey = getFlag("--key") || vaultConfig.apiKey;
+
+    if (!apiKey) {
+      console.error(
+        red(`  --key <api_key> required. Get yours at ${hostedUrl}/dashboard`),
+      );
+      process.exit(1);
+    }
+
+    console.log();
+    console.log(`  ${bold("◇ context-vault")} ${dim("switch → hosted")}`);
+    console.log();
+    console.log(dim("  Verifying API key..."));
+
+    try {
+      const response = await fetch(`${hostedUrl}/api/me`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const user = await response.json();
+      console.log(`  ${green("+")} Verified — ${user.email}\n`);
+    } catch (e) {
+      console.error(red(`  Verification failed: ${e.message}`));
+      process.exit(1);
+    }
+
+    vaultConfig.mode = "hosted";
+    vaultConfig.hostedUrl = hostedUrl;
+    vaultConfig.apiKey = apiKey;
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(configPath, JSON.stringify(vaultConfig, null, 2) + "\n");
+
+    for (const tool of detected) {
+      try {
+        if (tool.configType === "cli" && tool.id === "codex") {
+          configureCodexHosted(apiKey, hostedUrl);
+        } else if (tool.configType === "cli") {
+          configureClaudeHosted(apiKey, hostedUrl);
+        } else {
+          configureJsonToolHosted(tool, apiKey, hostedUrl);
+        }
+        console.log(`  ${green("+")} ${tool.name} — switched to hosted`);
+      } catch (e) {
+        console.log(`  ${red("x")} ${tool.name} — ${e.message}`);
+      }
+    }
+    console.log();
+    console.log(green("  ✓ Switched to hosted mode."));
+    console.log(dim(`  Endpoint: ${hostedUrl}/mcp`));
+    console.log();
+  }
 }
 
 function runUi() {
@@ -1157,6 +1303,24 @@ async function runStatus() {
   const { gatherVaultStatus } = await import("@context-vault/core/core/status");
 
   const config = resolveConfig();
+
+  let mode = "local";
+  let modeDetail = "";
+  const rawConfigPath = join(HOME, ".context-mcp", "config.json");
+  if (existsSync(rawConfigPath)) {
+    try {
+      const raw = JSON.parse(readFileSync(rawConfigPath, "utf-8"));
+      mode = raw.mode || "local";
+      if (mode === "hosted" && raw.hostedUrl) {
+        const email = raw.email ? ` · ${raw.email}` : "";
+        modeDetail = ` (${raw.hostedUrl}${email})`;
+      } else {
+        const launcherPath = join(HOME, ".context-mcp", "server.mjs");
+        modeDetail = ` (node ${launcherPath})`;
+      }
+    } catch {}
+  }
+
   const db = await initDatabase(config.dbPath);
 
   const status = gatherVaultStatus({ db, config });
@@ -1166,6 +1330,7 @@ async function runStatus() {
   console.log();
   console.log(`  ${bold("◇ context-vault")} ${dim(`v${VERSION}`)}`);
   console.log();
+  console.log(`  Mode:      ${mode}${dim(modeDetail)}`);
   console.log(
     `  Vault:     ${config.vaultDir} ${dim(`(${config.vaultDirExists ? status.fileCount + " files" : "missing"})`)}`,
   );
@@ -1915,6 +2080,9 @@ async function main() {
       break;
     case "connect":
       await runConnect();
+      break;
+    case "switch":
+      await runSwitch();
       break;
     case "serve":
       await runServe();

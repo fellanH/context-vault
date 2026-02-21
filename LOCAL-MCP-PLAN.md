@@ -63,11 +63,11 @@ npm package — no network required, no Vercel dependency.
 
 ### What needs to change
 
-| # | File | Change |
-|---|---|---|
-| 1 | `scripts/prepack.js` | After bundling core: build the React app and copy `dist/` → `app-dist/` |
-| 2 | `package.json` | Add `"app-dist/"` to the `"files"` array |
-| 3 | `bin/cli.js` — `ui` command | Remove the "prefer hosted if reachable" network check. Always open `http://localhost:{port}`. |
+| #   | File                        | Change                                                                                        |
+| --- | --------------------------- | --------------------------------------------------------------------------------------------- |
+| 1   | `scripts/prepack.js`        | After bundling core: build the React app and copy `dist/` → `app-dist/`                       |
+| 2   | `package.json`              | Add `"app-dist/"` to the `"files"` array                                                      |
+| 3   | `bin/cli.js` — `ui` command | Remove the "prefer hosted if reachable" network check. Always open `http://localhost:{port}`. |
 
 ### prepack.js addition
 

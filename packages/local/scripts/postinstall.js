@@ -10,9 +10,10 @@
  */
 
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = join(__dirname, "..");
@@ -88,6 +89,14 @@ async function main() {
       );
     }
   }
+
+  // ── 3. Write local server launcher ───────────────────────────────────
+  const SERVER_ABS = join(PKG_ROOT, "src", "server", "index.js");
+  const DATA_DIR = join(homedir(), ".context-mcp");
+  const LAUNCHER = join(DATA_DIR, "server.mjs");
+  mkdirSync(DATA_DIR, { recursive: true });
+  writeFileSync(LAUNCHER, `import "${SERVER_ABS}";\n`);
+  console.log("[context-vault] Local server launcher written to " + LAUNCHER);
 }
 
 main().catch(() => {});
