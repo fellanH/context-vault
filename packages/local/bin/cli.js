@@ -1212,7 +1212,7 @@ function launchServer(port, localServer) {
 
   setTimeout(() => {
     try {
-      const url = `https://app.context-vault.com?local=${port}`;
+      const url = `https://app.context-vault.com?mode=local&port=${port}`;
       console.log(`Opening ${url}`);
       const open =
         PLATFORM === "darwin"
