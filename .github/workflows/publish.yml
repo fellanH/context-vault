@@ -26,7 +26,7 @@ jobs:
           path: app-repo
 
       - name: Build app UI
-        run: cd app-repo && npm ci && npm run build
+        run: cd app-repo && npm install && npm run build
 
       - name: Copy app dist to local package
         run: cp -r app-repo/dist packages/local/app-dist
