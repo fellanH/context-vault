@@ -69,7 +69,9 @@ if (dirty) {
 const branch = run("git rev-parse --abbrev-ref HEAD");
 if (branch !== "main") {
   console.error(`On branch "${branch}" — releases should be from main.`);
-  try {
+}
+
+try {
   run("npm whoami");
 } catch {
   console.error("Not logged in to npm. Run: npm login");
@@ -119,7 +121,9 @@ console.log("  tests passed\n");
 
 console.log("  publishing to npm...");
 run("npm publish --workspace packages/local --access public");
-console.log(`  published context-vault@${newVersion}\n`);
+console.log(`  published context-vault@${newVersion}`);
+run("npm publish --workspace packages/core --access public");
+console.log(`  published @context-vault/core@${newVersion}\n`);
 
 // --- Commit, tag, push ---
 

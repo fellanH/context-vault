@@ -2,6 +2,26 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.2] — 2026-02-21
+
+### Added
+
+- `@context-vault/core` is now published to npm as a public package (`publishConfig.access: public`) — enables `context-vault-hosted` to depend on it without the monorepo
+
+### Changed
+
+- `scripts/release.mjs` publishes both `context-vault` and `@context-vault/core` on each release
+- `packages/hosted` extracted to [`context-vault-hosted`](https://github.com/fellanH/context-vault-hosted) private repo — Fly.io deploy now lives there; this repo is a focused OSS npm package
+
+### Removed
+
+- `packages/hosted/` directory, `fly.toml`, `.github/workflows/deploy.yml`
+- Hosted integration and unit tests (`hosted.test.js`, `hosted-auth.test.js`, `billing.test.js`, `turso.test.js`, `encryption.test.js`) — moved to `context-vault-hosted`
+
+### Test suite
+
+- **~330 tests** across 17 test files (hosted tests moved to context-vault-hosted)
+
 ## [2.8.1] — 2026-02-21
 
 ### Fixed

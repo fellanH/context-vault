@@ -40,6 +40,9 @@
     "directory": "packages/core"
   },
   "homepage": "https://github.com/fellanH/context-vault",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
