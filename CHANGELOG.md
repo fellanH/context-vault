@@ -2,6 +2,12 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.3] — 2026-02-21
+
+### Fixed
+
+- `release.mjs` now publishes `@context-vault/core` before `context-vault` to prevent dependency resolution gaps
+
 ## [2.8.2] — 2026-02-21
 
 ### Added
