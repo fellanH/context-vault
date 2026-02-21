@@ -2,6 +2,14 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.14] — 2026-02-22
+
+### Fixed
+
+- Embedding pipeline no longer spawns multiple concurrent model loads — concurrent `embed()` / `embedBatch()` calls now await a single shared `loadingPromise`; health-check resets and `resetEmbedPipeline()` clear it correctly
+- `reindex()` no longer crashes with a null dereference when `getRowid` returns nothing after a successful `INSERT OR IGNORE` — missing rowid now skips embedding for that entry rather than aborting the full reindex
+- Vector KNN query uses a bound parameter for `LIMIT` instead of string interpolation
+
 ## [2.8.13] — 2026-02-21
 
 ### Fixed
