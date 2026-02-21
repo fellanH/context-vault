@@ -7,6 +7,8 @@
 
 Persistent memory for AI agents — save and search knowledge across sessions. Your data stays local as markdown files.
 
+> **Hosted tier** — cloud sync, web dashboard, and team sharing → [context-vault.com](https://context-vault.com)
+
 <p align="center">
   <img src="demo.gif" alt="context-vault demo — Claude Code and Cursor using the knowledge vault" width="800">
 </p>
@@ -72,7 +74,7 @@ Kinds: `insight` · `decision` · `pattern` · `reference` · `contact` — deri
 
 ## Hosted Option
 
-Prefer cloud over local? No Node.js required — sign up at [app.context-vault.com](https://app.context-vault.com), get an API key, and connect in 2 minutes.
+Prefer cloud over local? No Node.js required — cloud sync, web dashboard, and team sharing at [context-vault.com](https://context-vault.com). Sign up, get an API key, and connect in 2 minutes.
 
 ## Configuration
 
