@@ -2,6 +2,14 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.7] — 2026-02-21
+
+### Removed
+
+- Global install prompt at end of `setup` — npx caches after first run, no prompt needed
+- `configureWithLauncher()` helper — no longer needed without global install path
+- "Prefer a permanent install?" block from README Quick Start
+
 ## [2.8.6] — 2026-02-21
 
 ### Removed
