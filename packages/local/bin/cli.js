@@ -1180,30 +1180,6 @@ async function runSwitch() {
 }
 
 function runUi() {
-  // Try bundled path first (npm install), then workspace path (local dev)
-  const bundledDist = resolve(ROOT, "app-dist");
-  const workspaceDist = resolve(ROOT, "..", "app", "dist");
-  const appDist = existsSync(join(bundledDist, "index.html"))
-    ? bundledDist
-    : existsSync(join(workspaceDist, "index.html"))
-      ? workspaceDist
-      : null;
-
-  if (!appDist) {
-    const cloudUrl = "https://app.context-vault.com";
-    console.log(`Opening ${cloudUrl}`);
-    const open =
-      PLATFORM === "darwin"
-        ? "open"
-        : PLATFORM === "win32"
-          ? "start"
-          : "xdg-open";
-    try {
-      execSync(`${open} ${cloudUrl}`, { stdio: "ignore" });
-    } catch {}
-    return;
-  }
-
   const port = parseInt(getFlag("--port") || "3141", 10);
   const localServer = join(ROOT, "scripts", "local-server.js");
   if (!existsSync(localServer)) {
@@ -1234,20 +1210,9 @@ function launchServer(port, localServer) {
   const child = fork(localServer, [`--port=${port}`], { stdio: "inherit" });
   child.on("exit", (code) => process.exit(code ?? 0));
 
-  // Open browser after a short delay — prefer hosted UI if reachable
-  setTimeout(async () => {
+  setTimeout(() => {
     try {
-      let url = `http://localhost:${port}`;
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        await fetch("https://context-vault.com", {
-          method: "HEAD",
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        url = `https://context-vault.com?local=${port}`;
-      } catch {}
+      const url = `https://app.context-vault.com?local=${port}`;
       console.log(`Opening ${url}`);
       const open =
         PLATFORM === "darwin"
