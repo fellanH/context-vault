@@ -1356,7 +1356,7 @@ async function runUpdate() {
     console.log(green(`  ✓ Updated to v${latest}`));
   } catch {
     console.error(
-      red("  Update failed. Try manually: npm install -g context-vault@latest"),
+      red("  Update failed. Try manually: npx -y context-vault@latest setup"),
     );
   }
   console.log();

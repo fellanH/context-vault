@@ -32,7 +32,7 @@ function formatNativeModuleError(err) {
     "    npm rebuild better-sqlite3 sqlite-vec",
     "",
     "  Or reinstall:",
-    "    npm install -g context-vault",
+    "    npx -y context-vault@latest setup",
   );
 
   return lines.join("\n");

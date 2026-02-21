@@ -14,8 +14,7 @@ Persistent memory for AI agents — save and search knowledge across sessions. Y
 ## Quick Start
 
 ```bash
-npm install -g context-vault
-context-vault setup
+npx context-vault setup
 ```
 
 Setup detects your AI tools (Claude Code, Cursor, Codex, Windsurf, etc.), configures MCP, downloads the embedding model (~22MB), and seeds a starter entry. Takes about 2 minutes.
@@ -40,8 +39,6 @@ You’re done. The vault lives at `~/vault/` — plain markdown files you own.
 | "Search my vault for React Query"                        | Returns matching entries                 |
 | "List my recent decisions"                               | Browses entries by kind                  |
 | "Show my vault status"                                   | Diagnostics and health                   |
-
-Optional: run `context-vault ui` for a local web dashboard at `localhost:3141`.
 
 ## MCP Tools
 
