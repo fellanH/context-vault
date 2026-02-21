@@ -10,10 +10,11 @@
  *   npm run release -- 2.5.0     # explicit version
  */
 
-import { readFileSync, writeFileSync } from "fs";
-import { resolve, dirname } from "path";
+import { readFileSync, writeFileSync, unlinkSync } from "fs";
+import { resolve, dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
+import { tmpdir } from "os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -28,6 +29,15 @@ const PACKAGE_FILES = [
 
 function run(cmd) {
   return execSync(cmd, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim();
+}
+
+/** Extract the changelog section for a given version */
+function extractChangelogEntry(changelog, version) {
+  const start = changelog.indexOf(`## [${version}]`);
+  if (start === -1) return `Release ${version}`;
+  const rest = changelog.slice(start);
+  const nextSection = rest.indexOf("\n## ", 1);
+  return (nextSection === -1 ? rest : rest.slice(0, nextSection)).trim();
 }
 
 function parseVersion(v) {
@@ -135,5 +145,21 @@ console.log(`  committed and tagged v${newVersion}`);
 console.log(`  pushing to origin...\n`);
 
 run("git push origin main --tags");
+
+// --- Create GitHub Release ---
+
+const notes = extractChangelogEntry(changelog, newVersion);
+const notesFile = join(tmpdir(), `cv-release-notes-${newVersion}.md`);
+writeFileSync(notesFile, notes);
+try {
+  run(
+    `gh release create v${newVersion} --title "v${newVersion}" --notes-file "${notesFile}" --latest`,
+  );
+  console.log(`  created GitHub release v${newVersion}\n`);
+} catch (e) {
+  console.error(`  GitHub release failed (non-blocking): ${e.message}\n`);
+} finally {
+  unlinkSync(notesFile);
+}
 
 console.log(`  done.\n`);

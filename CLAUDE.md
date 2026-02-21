@@ -57,14 +57,21 @@ Code self-documents. No inline comments. No docs for anything derivable from cod
 
 **npm release:** update `CHANGELOG.md`, then `node scripts/release.mjs patch|minor|major`
 
+The release script handles everything: version bump → tests → npm publish → git tag → push → GitHub Release (with CHANGELOG notes).
+
 Versioning: bump root + core + local together.
 
 ## Deploy Pipeline
 
-| Package        | Trigger      | Target |
-| -------------- | ------------ | ------ |
-| packages/local | git tag `v*` | npm    |
-| packages/core  | git tag `v*` | npm    |
+Everything runs locally via `scripts/release.mjs` — no CI publish step.
+
+| Step           | What happens                                       |
+| -------------- | -------------------------------------------------- |
+| version bump   | root + packages/core + packages/local package.json |
+| tests          | `npm test` — must pass                             |
+| npm publish    | `@context-vault/core` + `context-vault` (public)   |
+| git tag + push | `vX.Y.Z` tag pushed to origin/main                 |
+| GitHub Release | Created automatically with CHANGELOG notes         |
 
 ## Agent Boundaries
 
