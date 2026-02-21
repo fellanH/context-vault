@@ -4,16 +4,16 @@ import { indexEntry } from "../../index/index.js";
 import { categoryFor } from "../../core/categories.js";
 import { normalizeKind } from "../../core/files.js";
 import { ok, err, ensureVaultExists, ensureValidKind } from "../helpers.js";
-
-// ─── Input size limits (mirrors hosted validation) ────────────────────────────
-const MAX_BODY_LENGTH = 100 * 1024; // 100KB
-const MAX_TITLE_LENGTH = 500;
-const MAX_KIND_LENGTH = 64;
-const MAX_TAG_LENGTH = 100;
-const MAX_TAGS_COUNT = 20;
-const MAX_META_LENGTH = 10 * 1024; // 10KB
-const MAX_SOURCE_LENGTH = 200;
-const MAX_IDENTITY_KEY_LENGTH = 200;
+import {
+  MAX_BODY_LENGTH,
+  MAX_TITLE_LENGTH,
+  MAX_KIND_LENGTH,
+  MAX_TAG_LENGTH,
+  MAX_TAGS_COUNT,
+  MAX_META_LENGTH,
+  MAX_SOURCE_LENGTH,
+  MAX_IDENTITY_KEY_LENGTH,
+} from "../../constants.js";
 
 /**
  * Validate input fields for save_context. Returns an error response or null.
