@@ -2,6 +2,12 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.4] — 2026-02-21
+
+### Fixed
+
+- `@huggingface/transformers` moved from `dependencies` to `optionalDependencies` in `@context-vault/core` — prevents install failures caused by `sharp`'s broken lifecycle scripts in constrained environments (global npm, Docker, CI)
+
 ## [2.8.3] — 2026-02-21
 
 ### Fixed
