@@ -2,6 +2,16 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.11] — 2026-02-21
+
+### Fixed
+
+- `setup --vault-dir <path>` now works — custom vault path is respected in non-interactive mode and pre-filled in interactive mode
+- Setup exits with a clear error if the vault directory path is occupied by a file (not a directory)
+- `server.mjs` launcher is created/refreshed on every `setup` run for globally installed packages, keeping it current after updates
+- `configureClaude` and `configureCodex` now use `execFileSync` with argument arrays instead of shell-interpolated strings — paths with spaces in the node binary or vault dir no longer cause failures
+- Windsurf: config is written to `~/.windsurf/mcp.json` for new-style installs (previously always used `~/.codeium/windsurf/mcp_config.json`)
+
 ## [2.8.10] — 2026-02-21
 
 ### Fixed
