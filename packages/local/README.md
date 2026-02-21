@@ -10,15 +10,21 @@ Persistent memory for AI agents — saves and searches knowledge across sessions
 ## Quick Start
 
 ```bash
-npm install -g context-vault
-context-vault setup
+npx context-vault setup
 ```
 
-Setup auto-detects your AI tools (Claude Code, Codex, Claude Desktop, Cursor, Windsurf, Cline), downloads the embedding model (~22MB), seeds your vault with a starter entry, and verifies everything works.
+That's it. One command — no global install required.
+
+Setup detects your AI tools (Claude Code, Codex, Claude Desktop, Cursor, Windsurf, Cline, and more), downloads the embedding model (~22MB), seeds your vault, and configures MCP.
 
 Then open your AI tool and try: **"Search my vault for getting started"**
 
-> `context-mcp` still works as a CLI alias — `context-vault` is the primary command.
+**Prefer a permanent install?**
+
+```bash
+npm install -g context-vault
+context-vault setup
+```
 
 ## What It Does
 
@@ -43,17 +49,19 @@ Entries are organized by `kind` (insight, decision, pattern, reference, contact,
 
 ## CLI
 
-| Command                          | Description                                               |
-| -------------------------------- | --------------------------------------------------------- |
-| `context-vault setup`            | Interactive installer — detects tools, writes MCP configs |
-| `context-vault ui [--port 3141]` | Web dashboard                                             |
-| `context-vault status`           | Vault health, paths, entry counts                         |
-| `context-vault reindex`          | Rebuild search index                                      |
-| `context-vault import <path>`    | Import .md, .csv, .json, .txt                             |
-| `context-vault export`           | Export to JSON or CSV                                     |
-| `context-vault sync`             | Sync with hosted account                                  |
-| `context-vault update`           | Check for updates                                         |
-| `context-vault uninstall`        | Remove MCP configs                                        |
+| Command                       | Description                                               |
+| ----------------------------- | --------------------------------------------------------- |
+| `context-vault setup`         | Interactive installer — detects tools, writes MCP configs |
+| `context-vault connect --key` | Connect AI tools to hosted vault                          |
+| `context-vault switch`        | Switch between local and hosted MCP modes                 |
+| `context-vault serve`         | Start the MCP server (used by AI clients)                 |
+| `context-vault status`        | Vault health, paths, entry counts                         |
+| `context-vault reindex`       | Rebuild search index                                      |
+| `context-vault import <path>` | Import .md, .csv, .json, .txt                             |
+| `context-vault export`        | Export to JSON or CSV                                     |
+| `context-vault ingest <url>`  | Fetch URL and save as vault entry                         |
+| `context-vault update`        | Check for updates                                         |
+| `context-vault uninstall`     | Remove MCP configs                                        |
 
 ## Manual MCP Config
 

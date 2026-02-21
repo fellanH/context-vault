@@ -90,13 +90,18 @@ async function main() {
     }
   }
 
-  // ── 3. Write local server launcher ───────────────────────────────────
-  const SERVER_ABS = join(PKG_ROOT, "src", "server", "index.js");
-  const DATA_DIR = join(homedir(), ".context-mcp");
-  const LAUNCHER = join(DATA_DIR, "server.mjs");
-  mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(LAUNCHER, `import "${SERVER_ABS}";\n`);
-  console.log("[context-vault] Local server launcher written to " + LAUNCHER);
+  // ── 3. Write local server launcher (global installs only) ────────────
+  // Under npx the path would be stale after cache eviction — configs use
+  // `npx context-vault serve` instead, so skip writing the launcher.
+  const isNpx = PKG_ROOT.includes("/_npx/") || PKG_ROOT.includes("\\_npx\\");
+  if (!isNpx) {
+    const SERVER_ABS = join(PKG_ROOT, "src", "server", "index.js");
+    const DATA_DIR = join(homedir(), ".context-mcp");
+    const LAUNCHER = join(DATA_DIR, "server.mjs");
+    mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(LAUNCHER, `import "${SERVER_ABS}";\n`);
+    console.log("[context-vault] Local server launcher written to " + LAUNCHER);
+  }
 }
 
 main().catch(() => {});
