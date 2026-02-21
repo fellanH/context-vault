@@ -2,6 +2,15 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.9] — 2026-02-21
+
+### Changed
+
+- Auto-select the single detected tool during setup — skips the selection prompt when there's no choice to make
+- "No tools detected" manual config snippet now shows `npx` format instead of bare `context-vault` command
+- Completion box CLI commands and embedding retry message use `npx context-vault` when running via npx
+- Removed extra blank line before vault directory prompt (stage banner already provides spacing)
+
 ## [2.8.8] — 2026-02-21
 
 ### Changed
