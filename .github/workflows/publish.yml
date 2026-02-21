@@ -2,7 +2,7 @@ name: Publish to npm
 
 on:
   push:
-    tags: ['v*']
+    tags: ["v*"]
 
 permissions:
   contents: write
@@ -18,6 +18,18 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           registry-url: https://registry.npmjs.org
+
+      - name: Checkout context-vault-app for UI build
+        uses: actions/checkout@v4
+        with:
+          repository: fellanH/context-vault-app
+          path: app-repo
+
+      - name: Build app UI
+        run: cd app-repo && npm ci && npm run build
+
+      - name: Copy app dist to local package
+        run: cp -r app-repo/dist packages/local/app-dist
 
       - run: npm ci
 

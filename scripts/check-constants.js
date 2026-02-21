@@ -84,8 +84,6 @@ const SCAN_DIRS = [
   "packages/core/src",
   "packages/local/src",
   "packages/hosted/src",
-  "packages/app/src",
-  "packages/extension/src",
 ];
 
 const SKIP_NAMES = new Set([
