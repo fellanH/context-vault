@@ -7,8 +7,6 @@
  * Uses Node built-in fetch() (Node 18+). No external dependencies.
  */
 
-// ─── HTML → Markdown ─────────────────────────────────────────────────────────
-
 /**
  * Convert HTML to simplified markdown.
  * Strips scripts/styles, converts headings/links/lists/code.
@@ -142,8 +140,6 @@ function decodeEntities(text) {
     );
 }
 
-// ─── HTML Content Extraction ─────────────────────────────────────────────────
-
 /**
  * Extract the main readable content from an HTML page.
  * Prefers <article> or <main>, falls back to <body>.
@@ -179,8 +175,6 @@ export function extractHtmlContent(html, url) {
 
   return { title, body };
 }
-
-// ─── URL Ingestion ───────────────────────────────────────────────────────────
 
 /**
  * Fetch a URL, extract readable content, and return an EntryData object.

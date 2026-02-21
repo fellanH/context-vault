@@ -1,13 +1,3 @@
-/**
- * config.js — CLI argument parsing and configuration resolution
- *
- * Resolution chain (highest priority last):
- *   1. Convention defaults
- *   2. Config file (~/.context-mcp/config.json)
- *   3. Environment variables (CONTEXT_VAULT_* or CONTEXT_MCP_*)
- *   4. CLI arguments
- */
-
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -29,7 +19,6 @@ export function resolveConfig() {
   const HOME = homedir();
   const cliArgs = parseArgs(process.argv);
 
-  // 1. Convention defaults
   const dataDir = resolve(
     cliArgs.dataDir ||
       process.env.CONTEXT_VAULT_DATA_DIR ||
@@ -45,7 +34,6 @@ export function resolveConfig() {
     resolvedFrom: "defaults",
   };
 
-  // 2. Config file
   const configPath = join(dataDir, "config.json");
   if (existsSync(configPath)) {
     try {
@@ -73,7 +61,6 @@ export function resolveConfig() {
   }
   config.configPath = configPath;
 
-  // 3. Environment variable overrides (CONTEXT_VAULT_* takes priority over CONTEXT_MCP_*)
   if (
     process.env.CONTEXT_VAULT_VAULT_DIR ||
     process.env.CONTEXT_MCP_VAULT_DIR
@@ -103,7 +90,6 @@ export function resolveConfig() {
     config.resolvedFrom = "env";
   }
 
-  // 3b. Hosted account env overrides
   if (process.env.CONTEXT_VAULT_API_KEY) {
     config.apiKey = process.env.CONTEXT_VAULT_API_KEY;
   }
@@ -111,7 +97,6 @@ export function resolveConfig() {
     config.hostedUrl = process.env.CONTEXT_VAULT_HOSTED_URL;
   }
 
-  // 4. CLI arg overrides (highest priority)
   if (cliArgs.vaultDir) {
     config.vaultDir = cliArgs.vaultDir;
     config.resolvedFrom = "CLI args";

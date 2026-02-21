@@ -4,8 +4,6 @@
 
 import { unlinkSync, copyFileSync, existsSync } from "node:fs";
 
-// ─── Native Module Error ────────────────────────────────────────────────────
-
 export class NativeModuleError extends Error {
   constructor(originalError) {
     const diagnostic = formatNativeModuleError(originalError);
@@ -44,8 +42,6 @@ function formatNativeModuleError(err) {
   return lines.join("\n");
 }
 
-// ─── Lazy Native Module Loading ─────────────────────────────────────────────
-
 let _Database = null;
 let _sqliteVec = null;
 
@@ -69,8 +65,6 @@ async function loadNativeModules() {
 
   return { Database: _Database, sqliteVec: _sqliteVec };
 }
-
-// ─── Schema DDL (v7 — teams) ────────────────────────────────────────────────
 
 export const SCHEMA_DDL = `
   CREATE TABLE IF NOT EXISTS vault (
@@ -126,8 +120,6 @@ export const SCHEMA_DDL = `
   -- Single vec table (384-dim float32 for all-MiniLM-L6-v2)
   CREATE VIRTUAL TABLE IF NOT EXISTS vault_vec USING vec0(embedding float[384]);
 `;
-
-// ─── Database Init ───────────────────────────────────────────────────────────
 
 export async function initDatabase(dbPath) {
   const { Database, sqliteVec } = await loadNativeModules();
@@ -229,8 +221,6 @@ export async function initDatabase(dbPath) {
   return db;
 }
 
-// ─── Prepared Statements Factory ─────────────────────────────────────────────
-
 export function prepareStatements(db) {
   try {
     return {
@@ -266,8 +256,6 @@ export function prepareStatements(db) {
     );
   }
 }
-
-// ─── Vector Helpers (parameterized rowid via cached statements) ──────────────
 
 export function insertVec(stmts, rowid, embedding) {
   // sqlite-vec requires BigInt for primary key — better-sqlite3 binds Number as REAL,

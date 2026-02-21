@@ -2,8 +2,6 @@
  * frontmatter.js — YAML frontmatter parsing and formatting
  */
 
-// ─── YAML Frontmatter Helpers ────────────────────────────────────────────────
-
 const NEEDS_QUOTING = /[:#'"{}[\],>|&*?!@`]/;
 
 export function formatFrontmatter(meta) {
@@ -62,8 +60,6 @@ export function parseFrontmatter(text) {
   return { meta, body: match[2].trim() };
 }
 
-// ─── Extract Custom Meta ────────────────────────────────────────────────────
-
 const RESERVED_FM_KEYS = new Set([
   "id",
   "tags",
@@ -80,8 +76,6 @@ export function extractCustomMeta(fmMeta) {
   }
   return Object.keys(custom).length ? custom : null;
 }
-
-// ─── Parse Entry From Markdown ──────────────────────────────────────────────
 
 export function parseEntryFromMarkdown(kind, body, fmMeta) {
   if (kind === "insight") {

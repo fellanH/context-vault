@@ -16,8 +16,6 @@ import {
 } from "../core/frontmatter.js";
 import { dirToKind } from "../core/files.js";
 
-// ─── Format Detection ────────────────────────────────────────────────────────
-
 /**
  * Detect the format of a file by extension and content heuristics.
  * @param {string} filePath
@@ -41,8 +39,6 @@ export function detectFormat(filePath, content) {
 
   return "text";
 }
-
-// ─── CSV Parsing Helpers ─────────────────────────────────────────────────────
 
 /**
  * Parse a CSV line respecting quoted fields.
@@ -81,8 +77,6 @@ function parseCsvLine(line, delimiter) {
   return fields;
 }
 
-// ─── Recognized CSV columns ─────────────────────────────────────────────────
-
 const KNOWN_COLUMNS = new Set([
   "kind",
   "title",
@@ -92,8 +86,6 @@ const KNOWN_COLUMNS = new Set([
   "identity_key",
   "expires_at",
 ]);
-
-// ─── Parsers ─────────────────────────────────────────────────────────────────
 
 /**
  * Parse a markdown file into EntryData.

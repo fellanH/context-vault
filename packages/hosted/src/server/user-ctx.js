@@ -22,8 +22,6 @@ import { getTierLimits } from "../billing/stripe.js";
 import { pool, getUserVaultDir, getUserDbPath } from "./user-db.js";
 import { PER_USER_DB } from "./ctx.js";
 
-// ─── Per-user context cache ──────────────────────────────────────────────────
-
 const userCtxCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 

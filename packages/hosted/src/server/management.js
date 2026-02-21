@@ -41,8 +41,6 @@ import { pool, getUserDir } from "./user-db.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// ─── Registration Rate Limiting (SQLite-backed, survives restarts) ───────────
-
 const RATE_LIMIT_MAX = 5;
 let rateLimitPruneCounter = 0;
 
@@ -97,8 +95,6 @@ export function createManagementRoutes(ctx) {
 
   const VAULT_MASTER_SECRET = process.env.VAULT_MASTER_SECRET || null;
 
-  // ─── Auth helper for management routes ──────────────────────────────────────
-
   function requireAuth(c) {
     const header = c.req.header("Authorization");
     if (!header?.startsWith("Bearer ")) return null;
@@ -111,8 +107,6 @@ export function createManagementRoutes(ctx) {
     }
     return user;
   }
-
-  // ─── Current User ─────────────────────────────────────────────────────────
 
   /** Return the authenticated user's profile */
   api.get("/api/me", (c) => {
@@ -132,8 +126,6 @@ export function createManagementRoutes(ctx) {
       createdAt: row.created_at,
     });
   });
-
-  // ─── API Keys ───────────────────────────────────────────────────────────────
 
   /** List all API keys for the authenticated user */
   api.get("/api/keys", (c) => {
@@ -203,8 +195,6 @@ export function createManagementRoutes(ctx) {
     }
     return c.json({ deleted: true });
   });
-
-  // ─── Google OAuth ─────────────────────────────────────────────────────────
 
   /** Redirect to Google OAuth consent screen */
   api.get("/api/auth/google", (c) => {
@@ -377,8 +367,6 @@ export function createManagementRoutes(ctx) {
     return c.redirect(`${appUrl}/auth/callback#${fragment}`);
   });
 
-  // ─── User Registration (email — legacy, kept for backwards compat) ────────
-
   /** Register a new user and return their first API key */
   api.post("/api/register", async (c) => {
     const ip = getClientIp(c);
@@ -468,8 +456,6 @@ export function createManagementRoutes(ctx) {
 
     return c.json(response, 201);
   });
-
-  // ─── Billing ───────────────────────────────────────────────────────────────
 
   api.get("/api/billing/usage", async (c) => {
     const user = requireAuth(c);
@@ -626,8 +612,6 @@ export function createManagementRoutes(ctx) {
 
     return c.json({ received: true });
   });
-
-  // ─── Teams ────────────────────────────────────────────────────────────────
 
   /** Create a new team — caller becomes owner */
   api.post("/api/teams", async (c) => {
@@ -936,8 +920,6 @@ export function createManagementRoutes(ctx) {
     });
   });
 
-  // ─── Account Deletion (GDPR) ─────────────────────────────────────────────
-
   api.delete("/api/account", async (c) => {
     const user = requireAuth(c);
     if (!user) return c.json({ error: "Unauthorized" }, 401);
@@ -1009,7 +991,6 @@ export function createManagementRoutes(ctx) {
     return c.json({ deleted: true });
   });
 
-  // ─── Vault Export (for migration) ───────────────────────────────────────────
   // NOTE: Import routes (single + bulk) are in vault-api.js with standard auth middleware
 
   /** Export vault entries (supports pagination via ?limit=N&offset=N) */

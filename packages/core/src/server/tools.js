@@ -39,8 +39,6 @@ const TOOL_TIMEOUT_MS = 60_000;
 export function registerTools(server, ctx) {
   const userId = ctx.userId !== undefined ? ctx.userId : undefined;
 
-  // ─── Tool wrapper: tracks in-flight ops for graceful shutdown + timeout ────
-
   function tracked(handler) {
     return async (...args) => {
       if (ctx.activeOps) ctx.activeOps.count++;
@@ -69,8 +67,6 @@ export function registerTools(server, ctx) {
       }
     };
   }
-
-  // ─── Auto-Reindex (runs once per session, on first tool call) ──────────────
 
   // In hosted mode, skip reindex — DB is always in sync via writeEntry→indexEntry
   let reindexDone = userId !== undefined ? true : false;
@@ -111,8 +107,6 @@ export function registerTools(server, ctx) {
     reindexPromise = promise;
     return reindexPromise;
   }
-
-  // ─── Register all tool handlers ─────────────────────────────────────────────
 
   const shared = {
     ensureIndexed,

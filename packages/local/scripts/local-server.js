@@ -149,7 +149,6 @@ async function main() {
   const server = createServer(async (req, res) => {
     const url = req.url?.replace(/\?.*$/, "") || "/";
 
-    // ─── CORS ──────────────────────────────────────────────────────────────────
     const allowedOrigin = getAllowedOrigin(req);
     const corsHeaders = allowedOrigin
       ? {
@@ -189,7 +188,6 @@ async function main() {
 
     const ctx = state.ctx;
 
-    // ─── API: POST /api/local/browse — native folder picker dialog ────────────
     if (url === "/api/local/browse" && req.method === "POST") {
       const os = platform();
       try {
@@ -221,7 +219,6 @@ async function main() {
       }
     }
 
-    // ─── API: POST /api/local/connect — switch to a local vault folder ───────
     if (url === "/api/local/connect" && req.method === "POST") {
       const data = await readBody();
       if (!data?.vaultDir?.trim())
@@ -271,12 +268,10 @@ async function main() {
       }
     }
 
-    // ─── API: GET /api/health — lightweight liveness check ────────────────────
     if (url === "/api/health" && req.method === "GET") {
       return json({ ok: true, mode: "local" });
     }
 
-    // ─── API: /api/me (local mode — no auth) ─────────────────────────────────
     if (url === "/api/me" && req.method === "GET") {
       return json({
         userId: "local",
@@ -287,7 +282,6 @@ async function main() {
       });
     }
 
-    // ─── API: /api/billing/usage (local — unlimited) ─────────────────────────
     if (url === "/api/billing/usage" && req.method === "GET") {
       const status = gatherVaultStatus(ctx, {});
       const total = status.kindCounts.reduce((s, k) => s + k.c, 0);
@@ -305,12 +299,10 @@ async function main() {
       });
     }
 
-    // ─── API: /api/keys (local — empty) ──────────────────────────────────────
     if (url === "/api/keys" && req.method === "GET") {
       return json({ keys: [] });
     }
 
-    // ─── API: /api/vault/status ─────────────────────────────────────────────
     if (url === "/api/vault/status" && req.method === "GET") {
       const status = gatherVaultStatus(ctx, {});
       return json({
@@ -338,7 +330,6 @@ async function main() {
       });
     }
 
-    // ─── API: GET /api/vault/entries ────────────────────────────────────────
     if (url.startsWith("/api/vault/entries") && req.method === "GET") {
       const idMatch = url.match(/\/api\/vault\/entries\/([^/]+)$/);
       if (idMatch) {
@@ -377,7 +368,6 @@ async function main() {
       return json({ entries: rows.map(formatEntry), total, limit, offset });
     }
 
-    // ─── API: POST /api/vault/entries ────────────────────────────────────────
     if (url === "/api/vault/entries" && req.method === "POST") {
       const data = await readBody();
       if (!data)
@@ -407,7 +397,6 @@ async function main() {
       }
     }
 
-    // ─── API: PUT /api/vault/entries/:id ─────────────────────────────────────
     if (url.match(/^\/api\/vault\/entries\/[^/]+$/) && req.method === "PUT") {
       const id = url.split("/").pop();
       const data = await readBody();
@@ -442,7 +431,6 @@ async function main() {
       }
     }
 
-    // ─── API: DELETE /api/vault/entries/:id ──────────────────────────────────
     if (
       url.match(/^\/api\/vault\/entries\/[^/]+$/) &&
       req.method === "DELETE"
@@ -471,7 +459,6 @@ async function main() {
       });
     }
 
-    // ─── API: POST /api/vault/search ─────────────────────────────────────────
     if (url === "/api/vault/search" && req.method === "POST") {
       const data = await readBody();
       if (!data || !data.query?.trim())
@@ -502,7 +489,6 @@ async function main() {
       }
     }
 
-    // ─── API: POST /api/vault/import/bulk — Bulk import entries ─────────────
     if (url === "/api/vault/import/bulk" && req.method === "POST") {
       const data = await readBody();
       if (!data || !Array.isArray(data.entries)) {
@@ -531,7 +517,6 @@ async function main() {
       });
     }
 
-    // ─── API: POST /api/vault/import/file — Import from file content ────────
     if (url === "/api/vault/import/file" && req.method === "POST") {
       const data = await readBody();
       if (!data?.filename || !data?.content) {
@@ -562,7 +547,6 @@ async function main() {
       });
     }
 
-    // ─── API: GET /api/vault/export — Export all entries ─────────────────────
     if (url.startsWith("/api/vault/export") && req.method === "GET") {
       const u = new URL(req.url || "", "http://localhost");
       const format = u.searchParams.get("format") || "json";
@@ -617,7 +601,6 @@ async function main() {
       });
     }
 
-    // ─── API: POST /api/vault/ingest — Fetch URL and save as entry ──────────
     if (url === "/api/vault/ingest" && req.method === "POST") {
       const data = await readBody();
       if (!data?.url)
@@ -638,7 +621,6 @@ async function main() {
       }
     }
 
-    // ─── API: GET /api/vault/manifest — Lightweight entry list for sync ─────
     if (url === "/api/vault/manifest" && req.method === "GET") {
       const rows = ctx.db
         .prepare(
@@ -655,7 +637,6 @@ async function main() {
       });
     }
 
-    // ─── API: GET /api/local/link — Get link status ─────────────────────────
     if (url === "/api/local/link" && req.method === "GET") {
       const dataDir = join(homedir(), ".context-mcp");
       const configPath = join(dataDir, "config.json");
@@ -674,7 +655,6 @@ async function main() {
       });
     }
 
-    // ─── API: POST /api/local/link — Link/unlink hosted account ─────────────
     if (url === "/api/local/link" && req.method === "POST") {
       const data = await readBody();
       const dataDir = join(homedir(), ".context-mcp");
@@ -730,7 +710,6 @@ async function main() {
       }
     }
 
-    // ─── API: POST /api/local/sync — Bidirectional sync ─────────────────────
     if (url === "/api/local/sync" && req.method === "POST") {
       const dataDir = join(homedir(), ".context-mcp");
       const configPath = join(dataDir, "config.json");
@@ -769,7 +748,6 @@ async function main() {
       }
     }
 
-    // ─── Static files ───────────────────────────────────────────────────────
     const filePath = join(
       APP_DIST,
       url === "/" ? "index.html" : url.replace(/^\//, ""),

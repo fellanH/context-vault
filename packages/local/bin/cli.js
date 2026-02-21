@@ -10,16 +10,6 @@ if (nodeVersion < 20) {
   process.exit(1);
 }
 
-/**
- * context-vault CLI — Unified entry point
- *
- * Usage:
- *   context-vault setup              Interactive MCP installer
- *   context-vault ui [--port 3141]   Launch web dashboard
- *   context-vault reindex            Rebuild search index
- *   context-vault status             Show vault diagnostics
- */
-
 import { createInterface } from "node:readline";
 import {
   existsSync,
@@ -49,16 +39,12 @@ function isInstalledPackage() {
   return ROOT.includes("/node_modules/") || ROOT.includes("\\node_modules\\");
 }
 
-// ─── ANSI Helpers ────────────────────────────────────────────────────────────
-
 const bold = (s) => `\x1b[1m${s}\x1b[0m`;
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
 const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
 const red = (s) => `\x1b[31m${s}\x1b[0m`;
-
-// ─── Arg Parsing ─────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -69,8 +55,6 @@ function getFlag(name) {
   const idx = args.indexOf(name);
   return idx !== -1 && args[idx + 1] ? args[idx + 1] : null;
 }
-
-// ─── Readline Prompt ─────────────────────────────────────────────────────────
 
 function prompt(question, defaultVal) {
   if (isNonInteractive) return Promise.resolve(defaultVal || "");
@@ -83,8 +67,6 @@ function prompt(question, defaultVal) {
     });
   });
 }
-
-// ─── Platform Helpers ────────────────────────────────────────────────────────
 
 const PLATFORM = platform();
 
@@ -113,8 +95,6 @@ function vscodeDataDir() {
       return join(HOME, ".config", "Code", "User", "globalStorage");
   }
 }
-
-// ─── Tool Detection ──────────────────────────────────────────────────────────
 
 function commandExistsAsync(bin) {
   const cmd = PLATFORM === "win32" ? "where" : "which";
@@ -231,8 +211,6 @@ function printDetectionResults(results) {
   }
 }
 
-// ─── Help ────────────────────────────────────────────────────────────────────
-
 function showHelp() {
   console.log(`
   ${bold("◇ context-vault")} ${dim(`v${VERSION}`)}
@@ -264,8 +242,6 @@ ${bold("Options:")}
   --skip-embeddings     Skip embedding model download (FTS-only mode)
 `);
 }
-
-// ─── Setup Command ───────────────────────────────────────────────────────────
 
 async function runSetup() {
   const setupStart = Date.now();
@@ -757,8 +733,6 @@ function configureJsonTool(tool, vaultDir) {
   writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
 }
 
-// ─── Seed Entries ────────────────────────────────────────────────────────────
-
 function createSeedEntries(vaultDir) {
   let created = 0;
 
@@ -829,8 +803,6 @@ This is an example entry showing the decision format. Feel free to delete it.
 
   return created;
 }
-
-// ─── Connect Command ─────────────────────────────────────────────────────────
 
 async function runConnect() {
   const apiKey = getFlag("--key");
@@ -1061,8 +1033,6 @@ function configureJsonToolHosted(tool, apiKey, hostedUrl) {
   writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
 }
 
-// ─── UI Command ──────────────────────────────────────────────────────────────
-
 function runUi() {
   // Try bundled path first (npm install), then workspace path (local dev)
   const bundledDist = resolve(ROOT, "app-dist");
@@ -1144,8 +1114,6 @@ function launchServer(port, localServer) {
   }, 1500);
 }
 
-// ─── Reindex Command ─────────────────────────────────────────────────────────
-
 async function runReindex() {
   console.log(dim("Loading vault..."));
 
@@ -1182,8 +1150,6 @@ async function runReindex() {
   console.log(`  ${red("-")} ${stats.removed} removed`);
   console.log(`  ${dim("·")} ${stats.unchanged} unchanged`);
 }
-
-// ─── Status Command ──────────────────────────────────────────────────────────
 
 async function runStatus() {
   const { resolveConfig } = await import("@context-vault/core/core/config");
@@ -1255,8 +1221,6 @@ async function runStatus() {
   console.log();
 }
 
-// ─── Update Command ─────────────────────────────────────────────────────────
-
 async function runUpdate() {
   console.log();
   console.log(`  ${bold("◇ context-vault")} ${dim(`v${VERSION}`)}`);
@@ -1305,8 +1269,6 @@ async function runUpdate() {
   }
   console.log();
 }
-
-// ─── Uninstall Command ──────────────────────────────────────────────────────
 
 async function runUninstall() {
   console.log();
@@ -1378,8 +1340,6 @@ async function runUninstall() {
   console.log(`  To fully remove: ${cyan("npm uninstall -g context-vault")}`);
   console.log();
 }
-
-// ─── Migrate Command ─────────────────────────────────────────────────────────
 
 async function runMigrate() {
   const direction = args.includes("--to-hosted")
@@ -1464,8 +1424,6 @@ async function runMigrate() {
   }
   console.log();
 }
-
-// ─── Import Command ─────────────────────────────────────────────────────────
 
 async function runImport() {
   const target = args[1];
@@ -1569,8 +1527,6 @@ async function runImport() {
   }
   console.log();
 }
-
-// ─── Export Command ─────────────────────────────────────────────────────────
 
 async function runExport() {
   const format = getFlag("--format") || "json";
@@ -1684,8 +1640,6 @@ function mapExportRow(row) {
   };
 }
 
-// ─── Ingest Command ─────────────────────────────────────────────────────────
-
 async function runIngest() {
   const url = args[1];
   if (!url) {
@@ -1761,8 +1715,6 @@ async function runIngest() {
   console.log();
 }
 
-// ─── Link Command ───────────────────────────────────────────────────────────
-
 async function runLink() {
   const apiKey = getFlag("--key");
   const hostedUrl = getFlag("--url") || "https://api.context-vault.com";
@@ -1820,8 +1772,6 @@ async function runLink() {
   console.log(dim(`    Config: ${configPath}`));
   console.log();
 }
-
-// ─── Sync Command ───────────────────────────────────────────────────────────
 
 async function runSync() {
   const dryRun = flags.has("--dry-run");
@@ -1944,13 +1894,9 @@ async function runSync() {
   console.log();
 }
 
-// ─── Serve Command ──────────────────────────────────────────────────────────
-
 async function runServe() {
   await import("../src/server/index.js");
 }
-
-// ─── Main Router ─────────────────────────────────────────────────────────────
 
 async function main() {
   if (flags.has("--version") || command === "version") {

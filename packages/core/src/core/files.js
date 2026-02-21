@@ -8,8 +8,6 @@ import { readdirSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { categoryDirFor } from "./categories.js";
 
-// ─── ULID Generator (Crockford Base32) ────────────────────────────────────────
-
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 export function ulid() {
@@ -27,8 +25,6 @@ export function ulid() {
   return ts + rand;
 }
 
-// ─── Slugify ──────────────────────────────────────────────────────────────────
-
 export function slugify(text, maxLen = 60) {
   let slug = text
     .toLowerCase()
@@ -40,8 +36,6 @@ export function slugify(text, maxLen = 60) {
   }
   return slug;
 }
-
-// ─── Kind ↔ Directory Mapping ────────────────────────────────────────────────
 
 const PLURAL_MAP = {
   insight: "insights",
@@ -86,8 +80,6 @@ export function kindToPath(kind) {
   return `${categoryDirFor(kind)}/${kindToDir(kind)}`;
 }
 
-// ─── Safe Path Join ─────────────────────────────────────────────────────────
-
 export function safeJoin(base, ...parts) {
   const resolvedBase = resolve(base);
   const result = resolve(join(base, ...parts));
@@ -98,8 +90,6 @@ export function safeJoin(base, ...parts) {
   }
   return result;
 }
-
-// ─── Recursive Directory Walk ────────────────────────────────────────────────
 
 export function walkDir(dir) {
   const results = [];

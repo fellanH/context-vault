@@ -1,39 +1,5 @@
-/**
- * import-pipeline.js — Batch import orchestrator
- *
- * Processes an array of EntryData through captureAndIndex(),
- * reporting progress and collecting results.
- */
-
 import { captureAndIndex } from "./index.js";
 
-/**
- * @typedef {object} EntryData
- * @property {string} kind
- * @property {string} [title]
- * @property {string} body
- * @property {string[]} [tags]
- * @property {object} [meta]
- * @property {string} [source]
- * @property {string} [identity_key]
- * @property {string} [expires_at]
- */
-
-/**
- * @typedef {object} ImportResult
- * @property {number} imported
- * @property {number} failed
- * @property {Array<{ index: number, title?: string, error: string }>} errors
- */
-
-/**
- * Import an array of entries into the vault.
- *
- * @param {object} ctx — Vault context (db, config, stmts, embed, insertVec, deleteVec)
- * @param {EntryData[]} entries
- * @param {{ onProgress?: (current: number, total: number) => void, source?: string }} [opts]
- * @returns {Promise<ImportResult>}
- */
 export async function importEntries(ctx, entries, opts = {}) {
   const { onProgress, source } = opts;
   let imported = 0;
