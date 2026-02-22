@@ -2,6 +2,14 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.17] — 2026-02-22
+
+### Added
+
+- `context-vault ui` command opens the vault dashboard in the browser at `http://localhost:4422` (fully offline — no Vercel, no network required)
+- `packages/local/src/local-server.js` — pure Node.js HTTP server serving the bundled React app and a local REST API (`/api/vault/status`, `/api/vault/entries` CRUD, `/api/me`)
+- `prepack.js` now builds the React app from the sibling `context-vault-app` repo and copies `dist/` into `app-dist/` for tarball inclusion; skips gracefully if the sibling repo is absent
+
 ## [2.8.16] — 2026-02-22
 
 ### Fixed
