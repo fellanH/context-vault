@@ -2,6 +2,13 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.19] — 2026-02-22
+
+### Changed
+
+- Upgraded `vitest` dev dependency from v3 to v4
+- Removed dead `ui` script from root `package.json`
+
 ## [2.8.18] — 2026-02-22
 
 ### Changed
