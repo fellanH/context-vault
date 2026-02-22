@@ -2,6 +2,12 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.8.18] — 2026-02-22
+
+### Changed
+
+- Removed bundled web UI (`context-vault ui`, `local-server.js`, `app-dist/`) — the dashboard is part of the hosted product only; this package remains focused on CLI and MCP server
+
 ## [2.8.17] — 2026-02-22
 
 ### Added
