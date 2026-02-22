@@ -2,6 +2,15 @@
 
 All notable changes to context-vault are documented here.
 
+## [2.9.0] — 2026-02-22
+
+### Changed
+
+- **Replaced `better-sqlite3` with `node:sqlite` built-in** — eliminates all native addon dependencies and the `prebuild-install` deprecation warning on `npm install`
+- Require Node.js >=24 (stable `DatabaseSync` API)
+- Generated MCP server configs now include `NODE_OPTIONS=--no-warnings=ExperimentalWarning` to suppress the sqlite experimental warning until `node:sqlite` reaches stable status
+- Removed native-module rebuild logic from `postinstall.js` (no longer needed)
+
 ## [2.8.19] — 2026-02-22
 
 ### Changed
