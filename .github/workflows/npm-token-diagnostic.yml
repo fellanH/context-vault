@@ -1,0 +1,32 @@
+name: npm-token-diagnostic
+
+# Read-only diagnostic. Does NOT build, publish, tag, or create any release.
+# Prints which npm identity `NPM_TOKEN` resolves to and which packages it can
+# write under @context-vault — so the v4.0.0 publish E404 (token cannot create
+# @context-vault/cli-* packages) can be diagnosed without touching the registry.
+# Manual-trigger only.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    name: npm token identity (read-only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: whoami + scope
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "== npm whoami (identity NPM_TOKEN resolves to) =="
+          npm whoami || echo "(whoami failed — token invalid or read-only)"
+          echo
+          echo "== packages this token can write under @context-vault =="
+          npm access list packages @context-vault 2>&1 | head -40 || true
+          echo
+          echo "== is @context-vault/cli-aarch64-apple-darwin in that list? =="
+          echo "(absent => token lacks create-rights for the new platform packages)"

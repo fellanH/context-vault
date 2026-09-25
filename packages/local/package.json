@@ -1,0 +1,57 @@
+{
+  "name": "context-vault",
+  "version": "4.0.0",
+  "type": "module",
+  "description": "Persistent memory for AI agents — saves and searches knowledge across sessions",
+  "bin": {
+    "context-vault": "bin/cli.js",
+    "context-mcp": "bin/cli.js",
+    "memory": "bin/cli.js"
+  },
+  "exports": {
+    "./cli": "./bin/cli.js"
+  },
+  "scripts": {},
+  "files": [
+    "assets/",
+    "bin/",
+    ".mcp.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Felix Hellstrom",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fellanH/context-vault.git"
+  },
+  "homepage": "https://github.com/fellanH/context-vault",
+  "bugs": {
+    "url": "https://github.com/fellanH/context-vault/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "knowledge-base",
+    "knowledge-management",
+    "vault",
+    "rag",
+    "sqlite",
+    "embeddings",
+    "claude",
+    "cursor",
+    "cline",
+    "windsurf"
+  ],
+  "optionalDependencies": {
+    "@context-vault/cli-aarch64-apple-darwin": "4.0.0",
+    "@context-vault/cli-x86_64-apple-darwin": "4.0.0",
+    "@context-vault/cli-aarch64-unknown-linux-gnu": "4.0.0",
+    "@context-vault/cli-x86_64-unknown-linux-gnu": "4.0.0",
+    "@context-vault/cli-x86_64-pc-windows-msvc": "4.0.0"
+  }
+}

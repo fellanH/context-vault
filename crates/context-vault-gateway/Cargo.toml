@@ -1,0 +1,18 @@
+[package]
+name = "context-vault-gateway"
+version = "0.2.2"
+edition.workspace = true
+license.workspace = true
+description = "Context Vault self-hosted HTTP gateway: a thin axum server exposing the Rust engine over a bearer-authenticated REST API."
+
+[[bin]]
+name = "context-vault-gateway"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+context-vault-core.workspace = true

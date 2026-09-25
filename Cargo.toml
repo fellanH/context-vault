@@ -1,0 +1,57 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cv-engine",
+    "crates/cv-vault",
+    "crates/cv-schema",
+    "crates/cv-lifecycle",
+    "crates/cv-ingest",
+    "crates/cv-backends",
+    "crates/context-vault-core",
+    "crates/context-vault-cli",
+    "crates/context-vault-mcp",
+    "crates/context-vault-gateway",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+# Shared dependency versions. Members opt in via `<dep>.workspace = true`.
+# The reqwest/notify/flate2/axum entries are declared for later migration phases
+# (ingest-url, watch, compact, gateway) and are inert until a member consumes them.
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+rusqlite = { version = "0.32", features = ["bundled", "vtab"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# rustls (not native-tls) for hf-hub model downloads — keeps aarch64/cross builds
+# free of an OpenSSL toolchain dependency (Phase 7), same rationale as reqwest below.
+fastembed = { version = "4", default-features = false, features = ["ort-download-binaries", "hf-hub-rustls-tls"] }
+sqlite-vec = "0.1"
+tempfile = "3.14"
+tokio = { version = "1", features = ["full"] }
+ulid = "1"
+zerocopy = "0.7"
+regex = "1"
+dirs = "5"
+toml = "0.8"
+# rustls (not native-tls) keeps cross-compilation of the per-platform binaries
+# (Phase 7) free of an OpenSSL toolchain dependency.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+notify = "6"
+flate2 = "1"
+axum = "0.7"
+once_cell = "1"
+walkdir = "2"
+pathdiff = "0.2"
+cv-engine = { path = "crates/cv-engine" }
+cv-vault = { path = "crates/cv-vault" }
+cv-schema = { path = "crates/cv-schema" }
+cv-lifecycle = { path = "crates/cv-lifecycle" }
+cv-ingest = { path = "crates/cv-ingest" }
+cv-backends = { path = "crates/cv-backends" }
+context-vault-core = { path = "crates/context-vault-core" }

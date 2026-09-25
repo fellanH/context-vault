@@ -1,0 +1,25 @@
+[package]
+name = "cv-lifecycle"
+version = "0.2.2"
+edition.workspace = true
+license.workspace = true
+description = "Context Vault lifecycle: summarize, compact, archive, assemble, consolidation, tier analysis."
+
+[lib]
+name = "cv_lifecycle"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+flate2.workspace = true
+once_cell.workspace = true
+pathdiff.workspace = true
+walkdir.workspace = true
+regex.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

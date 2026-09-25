@@ -1,0 +1,25 @@
+{
+  "name": "@context-vault/sdk",
+  "version": "0.1.0",
+  "description": "Context lifecycle SDK for AI agents. Save, search, and manage persistent context with freshness scoring.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./hosted": {
+      "types": "./dist/hosted.d.ts",
+      "import": "./dist/hosted.js"
+    }
+  },
+  "files": ["dist"],
+  "license": "Apache-2.0",
+  "keywords": ["context", "ai", "agents", "memory", "mcp", "lifecycle"],
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}

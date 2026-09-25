@@ -1,0 +1,22 @@
+{
+  "name": "context-vault-monorepo",
+  "private": true,
+  "version": "4.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/local",
+    "packages/sdk"
+  ],
+  "scripts": {
+    "build": "cargo build --release --workspace",
+    "cli": "node packages/local/bin/cli.js",
+    "test": "cargo test --workspace",
+    "release": "node scripts/release.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,15 @@
+[package]
+name = "context-vault-mcp"
+version = "0.2.2"
+edition.workspace = true
+license.workspace = true
+description = "Context Vault MCP stdio server — thin binary over context-vault-core."
+
+[[bin]]
+name = "context-vault-mcp"
+path = "src/main.rs"
+
+[dependencies]
+context-vault-core.workspace = true
+anyhow.workspace = true
+tokio.workspace = true

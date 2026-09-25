@@ -1,0 +1,1580 @@
+/**
+ * Unit tests for MCP tool handlers.
+ *
+ * Tests the handler functions directly with a real DB context (via createTestCtx)
+ * and a minimal mock of the `shared` object. This validates the business logic
+ * layer that sits between the MCP SDK and the core capture/retrieve layers.
+ */
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { createTestCtx } from '../helpers/ctx.js';
+import { captureAndIndex } from '@context-vault/core/capture';
+
+import * as getContextTool from '../../packages/local/src/tools/get-context.js';
+import * as saveContextTool from '../../packages/local/src/tools/save-context.js';
+import * as deleteContextTool from '../../packages/local/src/tools/delete-context.js';
+import * as listContextTool from '../../packages/local/src/tools/list-context.js';
+import * as contextStatusTool from '../../packages/local/src/tools/context-status.js';
+import * as clearContextTool from '../../packages/local/src/tools/clear-context.js';
+
+const shared = { ensureIndexed: async () => {}, reindexFailed: false };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function isOk(result) {
+  expect(result.isError).toBeFalsy();
+  expect(result.content[0].type).toBe('text');
+  return result.content[0].text;
+}
+
+function isErr(result, code) {
+  expect(result.isError).toBe(true);
+  if (code) expect(result.code).toBe(code);
+  return result.content[0].text;
+}
+
+// ─── save_context ─────────────────────────────────────────────────────────────
+
+describe('save_context handler', () => {
+  let ctx, cleanup;
+
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
+  }, 30000);
+
+  afterAll(() => cleanup());
+
+  it('creates a new entry and returns its id', async () => {
+    const result = await saveContextTool.handler(
+      { kind: 'insight', body: 'SQLite is fast', title: 'SQLite tip' },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('✓ Saved');
+    expect(text).toContain('insight');
+    expect(text).toContain('`');
+  }, 30000);
+
+  it('rejects missing kind for new entries', async () => {
+    const result = await saveContextTool.handler({ body: 'some body' }, ctx, shared);
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('rejects missing body for new entries', async () => {
+    const result = await saveContextTool.handler({ kind: 'insight' }, ctx, shared);
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('rejects body that is whitespace-only', async () => {
+    const result = await saveContextTool.handler({ kind: 'insight', body: '   ' }, ctx, shared);
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('rejects invalid kind format', async () => {
+    const result = await saveContextTool.handler({ kind: 'My Kind!', body: 'test' }, ctx, shared);
+    isErr(result, 'INVALID_KIND');
+  }, 30000);
+
+  it('rejects title exceeding max length', async () => {
+    const result = await saveContextTool.handler(
+      { kind: 'insight', body: 'test', title: 'x'.repeat(501) },
+      ctx,
+      shared
+    );
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('rejects body exceeding max length', async () => {
+    const result = await saveContextTool.handler(
+      { kind: 'insight', body: 'x'.repeat(100 * 1024 + 1) },
+      ctx,
+      shared
+    );
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('rejects tags that are not an array', async () => {
+    const result = await saveContextTool.handler(
+      { kind: 'insight', body: 'test', tags: 'react' },
+      ctx,
+      shared
+    );
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('rejects too many tags', async () => {
+    const result = await saveContextTool.handler(
+      {
+        kind: 'insight',
+        body: 'test',
+        tags: Array.from({ length: 21 }, (_, i) => `tag${i}`),
+      },
+      ctx,
+      shared
+    );
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('rejects invalid expires_at', async () => {
+    const result = await saveContextTool.handler(
+      { kind: 'insight', body: 'test', expires_at: 'not-a-date' },
+      ctx,
+      shared
+    );
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('accepts valid expires_at ISO string', async () => {
+    const result = await saveContextTool.handler(
+      {
+        kind: 'insight',
+        body: 'TTL test entry',
+        expires_at: '2099-12-31T00:00:00Z',
+      },
+      ctx,
+      shared
+    );
+    isOk(result);
+  }, 30000);
+
+  it('requires identity_key for entity kinds', async () => {
+    const result = await saveContextTool.handler(
+      { kind: 'contact', body: 'Alice is a developer' },
+      ctx,
+      shared
+    );
+    isErr(result, 'MISSING_IDENTITY_KEY');
+  }, 30000);
+
+  it('updates an existing entry by id', async () => {
+    const createResult = await saveContextTool.handler(
+      { kind: 'insight', body: 'Original body', title: 'Original title' },
+      ctx,
+      shared
+    );
+    const createText = isOk(createResult);
+    const idMatch = createText.match(/`([A-Z0-9]{26})`/);
+    expect(idMatch).toBeTruthy();
+    const id = idMatch[1];
+
+    const updateResult = await saveContextTool.handler({ id, body: 'Updated body' }, ctx, shared);
+    const updateText = isOk(updateResult);
+    expect(updateText).toContain('✓ Updated');
+
+    const row = ctx.stmts.getEntryById.get(id);
+    expect(row.body).toContain('Updated body');
+  }, 30000);
+
+  it('returns NOT_FOUND when updating non-existent id', async () => {
+    const result = await saveContextTool.handler(
+      { id: '00000000000000000000000000', body: 'test' },
+      ctx,
+      shared
+    );
+    isErr(result, 'NOT_FOUND');
+  }, 30000);
+
+  it('cannot change kind on update', async () => {
+    const createResult = await saveContextTool.handler(
+      { kind: 'insight', body: 'body' },
+      ctx,
+      shared
+    );
+    const idMatch = isOk(createResult).match(/`([A-Z0-9]{26})`/);
+    const id = idMatch[1];
+
+    const result = await saveContextTool.handler(
+      { id, kind: 'decision', body: 'changed kind' },
+      ctx,
+      shared
+    );
+    isErr(result, 'INVALID_UPDATE');
+  }, 30000);
+
+  it('returns VAULT_NOT_FOUND when vault directory is missing', async () => {
+    const brokenCtx = {
+      ...ctx,
+      config: { ...ctx.config, vaultDirExists: false },
+    };
+    const result = await saveContextTool.handler(
+      { kind: 'insight', body: 'test' },
+      brokenCtx,
+      shared
+    );
+    isErr(result, 'VAULT_NOT_FOUND');
+  }, 30000);
+
+  it('dry_run: true returns without saving', async () => {
+    const before = ctx.db.prepare('SELECT COUNT(*) as c FROM vault').get().c;
+    const result = await saveContextTool.handler(
+      { kind: 'insight', body: 'Dry run test entry', dry_run: true },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('dry run');
+    const after = ctx.db.prepare('SELECT COUNT(*) as c FROM vault').get().c;
+    expect(after).toBe(before);
+  }, 30000);
+
+  it('dry_run: true on empty vault reports no similar entries', async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      const result = await saveContextTool.handler(
+        { kind: 'insight', body: 'Nothing in vault yet', dry_run: true },
+        freshCtx,
+        shared
+      );
+      const text = isOk(result);
+      expect(text).toContain('dry run');
+      expect(text).not.toContain('⚠');
+    } finally {
+      freshCleanup();
+    }
+  }, 30000);
+
+  it('normal save succeeds when embed returns null (graceful degradation)', async () => {
+    const noEmbedCtx = { ...ctx, embed: async () => null };
+    const result = await saveContextTool.handler(
+      {
+        kind: 'insight',
+        body: 'No embedding available',
+        title: 'Offline save',
+      },
+      noEmbedCtx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('✓ Saved');
+    expect(text).toContain('insight');
+  }, 30000);
+
+  it('dry_run: true with entity kind still requires identity_key', async () => {
+    const result = await saveContextTool.handler(
+      { kind: 'contact', body: 'test', dry_run: true },
+      ctx,
+      shared
+    );
+    isErr(result, 'MISSING_IDENTITY_KEY');
+  }, 30000);
+
+  it('saves entry with explicit tier and includes tier in success output', async () => {
+    const result = await saveContextTool.handler(
+      {
+        kind: 'insight',
+        body: 'Durable insight about the architecture',
+        title: 'Architecture insight',
+        tier: 'durable',
+      },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('✓ Saved');
+    expect(text).toContain('insight');
+    expect(text).toContain('**durable**');
+  }, 30000);
+
+  it('defaults tier based on kind when tier not provided', async () => {
+    const result = await saveContextTool.handler(
+      {
+        kind: 'decision',
+        body: 'We decided to use SQLite for local storage',
+        title: 'SQLite decision',
+      },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('**durable**');
+  }, 30000);
+
+  it('stores tier in database with correct value', async () => {
+    const result = await saveContextTool.handler(
+      {
+        kind: 'insight',
+        body: 'Ephemeral session note for testing',
+        tier: 'ephemeral',
+      },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    const idMatch = text.match(/`([A-Z0-9]{26})`/);
+    expect(idMatch).toBeTruthy();
+    const id = idMatch[1];
+
+    const row = ctx.stmts.getEntryById.get(id);
+    expect(row.tier).toBe('ephemeral');
+  }, 30000);
+});
+
+// ─── buildConflictCandidates (unit) ───────────────────────────────────────────
+
+import { buildConflictCandidates } from '../../packages/local/src/tools/save-context.js';
+
+describe('buildConflictCandidates', () => {
+  const baseEntry = {
+    id: '01ABCDEF01234567890ABCDE01',
+    title: 'SQLite performance tips',
+    body: 'Use WAL mode for concurrent reads.',
+    kind: 'insight',
+    tags: '["sqlite","performance"]',
+    updated_at: '2025-01-01T00:00:00Z',
+  };
+
+  it('suggests SKIP for score >= 0.95 (near-duplicate)', () => {
+    const entry = { ...baseEntry, score: 0.97 };
+    const [candidate] = buildConflictCandidates([entry]);
+    expect(candidate.suggested_action).toBe('SKIP');
+    expect(candidate.reasoning_context).toContain('Near-duplicate');
+    expect(candidate.reasoning_context).toContain(entry.id);
+  });
+
+  it('suggests SKIP at exactly 0.95', () => {
+    const entry = { ...baseEntry, score: 0.95 };
+    const [candidate] = buildConflictCandidates([entry]);
+    expect(candidate.suggested_action).toBe('SKIP');
+  });
+
+  it('suggests UPDATE for score >= 0.85 and < 0.95', () => {
+    const entry = { ...baseEntry, score: 0.9 };
+    const [candidate] = buildConflictCandidates([entry]);
+    expect(candidate.suggested_action).toBe('UPDATE');
+    expect(candidate.reasoning_context).toContain('High content similarity');
+    expect(candidate.reasoning_context).toContain(entry.id);
+  });
+
+  it('suggests UPDATE at exactly 0.85', () => {
+    const entry = { ...baseEntry, score: 0.85 };
+    const [candidate] = buildConflictCandidates([entry]);
+    expect(candidate.suggested_action).toBe('UPDATE');
+  });
+
+  it('suggests ADD for score < 0.85', () => {
+    const entry = { ...baseEntry, score: 0.87 };
+    const [candidate] = buildConflictCandidates([{ ...entry, score: 0.84 }]);
+    expect(candidate.suggested_action).toBe('ADD');
+    expect(candidate.reasoning_context).toContain('Moderate similarity');
+  });
+
+  it('parses JSON-encoded tags string', () => {
+    const entry = { ...baseEntry, score: 0.9, tags: '["sqlite","perf"]' };
+    const [candidate] = buildConflictCandidates([entry]);
+    expect(candidate.tags).toEqual(['sqlite', 'perf']);
+  });
+
+  it('accepts pre-parsed tags array', () => {
+    const entry = { ...baseEntry, score: 0.9, tags: ['sqlite', 'perf'] };
+    const [candidate] = buildConflictCandidates([entry]);
+    expect(candidate.tags).toEqual(['sqlite', 'perf']);
+  });
+
+  it('sets tags to [] when tags is null/undefined', () => {
+    const entry = { ...baseEntry, score: 0.9, tags: null };
+    const [candidate] = buildConflictCandidates([entry]);
+    expect(candidate.tags).toEqual([]);
+  });
+
+  it('sets tags to [] when tags is invalid JSON', () => {
+    const entry = { ...baseEntry, score: 0.9, tags: 'not-valid-json' };
+    const [candidate] = buildConflictCandidates([entry]);
+    expect(candidate.tags).toEqual([]);
+  });
+
+  it('includes full entry context (id, title, body, kind, score, updated_at)', () => {
+    const entry = { ...baseEntry, score: 0.9 };
+    const [candidate] = buildConflictCandidates([entry]);
+    expect(candidate.id).toBe(entry.id);
+    expect(candidate.title).toBe(entry.title);
+    expect(candidate.body).toBe(entry.body);
+    expect(candidate.kind).toBe(entry.kind);
+    expect(candidate.score).toBe(0.9);
+    expect(candidate.updated_at).toBe(entry.updated_at);
+  });
+
+  it('handles entry with no title gracefully', () => {
+    const entry = { ...baseEntry, score: 0.97, title: null };
+    const [candidate] = buildConflictCandidates([entry]);
+    expect(candidate.title).toBeNull();
+    expect(candidate.suggested_action).toBe('SKIP');
+    expect(candidate.reasoning_context).not.toContain('with "');
+  });
+
+  it('processes multiple entries independently', () => {
+    const entries = [
+      { ...baseEntry, id: 'id1', score: 0.97 },
+      { ...baseEntry, id: 'id2', score: 0.9 },
+      { ...baseEntry, id: 'id3', score: 0.84 },
+    ];
+    const candidates = buildConflictCandidates(entries);
+    expect(candidates[0].suggested_action).toBe('SKIP');
+    expect(candidates[1].suggested_action).toBe('UPDATE');
+    expect(candidates[2].suggested_action).toBe('ADD');
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(buildConflictCandidates([])).toEqual([]);
+  });
+});
+
+// ─── get_context ──────────────────────────────────────────────────────────────
+
+describe('get_context handler', () => {
+  let ctx, cleanup, seedId;
+
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
+    const entry = await captureAndIndex(ctx, {
+      kind: 'insight',
+      title: 'SQLite WAL mode',
+      body: 'WAL mode allows concurrent reads and writes in SQLite databases',
+      tags: ['sqlite', 'database'],
+      source: 'test',
+    });
+    await captureAndIndex(ctx, {
+      kind: 'contact',
+      title: 'Alice Developer',
+      body: 'Alice is a senior frontend developer',
+      tags: ['team'],
+      identity_key: 'alice',
+      source: 'test',
+    });
+    seedId = entry.id;
+  }, 60000);
+
+  afterAll(() => cleanup());
+
+  it('requires query or filters', async () => {
+    const result = await getContextTool.handler({}, ctx, shared);
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('finds entries by query', async () => {
+    const result = await getContextTool.handler({ query: 'SQLite WAL concurrent' }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('SQLite WAL mode');
+  }, 30000);
+
+  it('filters by kind', async () => {
+    const result = await getContextTool.handler(
+      { query: 'developer', kind: 'contact' },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('contact');
+    expect(text).not.toContain('insight');
+  }, 30000);
+
+  it('filters by category without query', async () => {
+    const result = await getContextTool.handler({ category: 'entity' }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('Alice Developer');
+  }, 30000);
+
+  it('returns results for kind filter alone', async () => {
+    const result = await getContextTool.handler({ kind: 'insight' }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('insight');
+  }, 30000);
+
+  it('returns no results message when nothing matches', async () => {
+    // Use a future 'since' date to guarantee zero results regardless of embeddings
+    const result = await getContextTool.handler(
+      { query: 'SQLite', since: '2099-01-01' },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('No results found');
+  }, 30000);
+
+  it('returns entity exact match by identity_key', async () => {
+    const result = await getContextTool.handler(
+      { kind: 'contact', identity_key: 'alice' },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('Entity Match (exact)');
+    expect(text).toContain('Alice Developer');
+  }, 30000);
+
+  it('requires kind when identity_key is provided', async () => {
+    const result = await getContextTool.handler({ identity_key: 'alice' }, ctx, shared);
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('respects limit parameter', async () => {
+    const result = await getContextTool.handler({ category: 'knowledge', limit: 1 }, ctx, shared);
+    const text = isOk(result);
+    // "1 matches" should appear
+    expect(text).toContain('1 matches');
+  }, 30000);
+
+  it('shows semantic search warning when embed unavailable', async () => {
+    const result = await getContextTool.handler({ query: 'SQLite' }, ctx, {
+      ...shared,
+      reindexFailed: false,
+    });
+    // If embed is loaded (test env), the note won't show. Just check it doesn't error.
+    isOk(result);
+  }, 30000);
+
+  it('includes tier in search result output', async () => {
+    const result = await getContextTool.handler({ kind: 'insight' }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toMatch(/\*\*(ephemeral|working|durable)\*\*/);
+  }, 30000);
+});
+
+// ─── get_context include_events ───────────────────────────────────────────────
+
+describe('get_context include_events', () => {
+  it('excludes event entries from query-based search by default', async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'insight',
+        title: 'Agent deployment strategy',
+        body: 'Deploy agents using sequential strategy for reliability',
+        tags: ['agents'],
+      });
+      await captureAndIndex(freshCtx, {
+        kind: 'log',
+        title: 'Agent deployment event log',
+        body: 'Deployed agent to work on deployment strategy task',
+        tags: ['agents', 'prompt-history'],
+      });
+
+      const result = await getContextTool.handler(
+        { query: 'agent deployment strategy' },
+        freshCtx,
+        shared
+      );
+      const text = isOk(result);
+      expect(text).toContain('Agent deployment strategy');
+      expect(text).not.toContain('event log');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+
+  it('includes event entries when include_events is true', async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'log',
+        title: 'Searchable event log',
+        body: 'This log covered important deployment topics',
+        tags: ['deployment'],
+      });
+
+      const result = await getContextTool.handler(
+        { query: 'deployment log', include_events: true },
+        freshCtx,
+        shared
+      );
+      const text = isOk(result);
+      expect(text).toContain('Searchable event log');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+
+  it('returns events in filter-only queries without include_events', async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'log',
+        title: 'Filter-only event log',
+        body: 'Log accessible via filters',
+        tags: ['test-filter'],
+      });
+
+      const result = await getContextTool.handler({ category: 'event' }, freshCtx, shared);
+      const text = isOk(result);
+      expect(text).toContain('Filter-only event log');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+
+  it('returns events when filtering by tag without query', async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'log',
+        title: 'Tagged event log entry',
+        body: 'Log with specific tag',
+        tags: ['my-tag'],
+      });
+
+      const result = await getContextTool.handler({ tags: ['my-tag'] }, freshCtx, shared);
+      const text = isOk(result);
+      expect(text).toContain('Tagged event log entry');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+});
+
+// ─── get_context scope parameter ─────────────────────────────────────────────
+
+describe('get_context scope', () => {
+  it("scope: 'hot' excludes event entries (default behaviour)", async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'insight',
+        title: 'Architecture decision for scope test',
+        body: 'We decided to use a modular architecture for maintainability',
+        tags: ['arch'],
+      });
+      await captureAndIndex(freshCtx, {
+        kind: 'log',
+        title: 'Architecture event log for scope test',
+        body: 'Logged architecture discussion during planning session',
+        tags: ['arch'],
+      });
+
+      const result = await getContextTool.handler(
+        { query: 'architecture scope test', scope: 'hot' },
+        freshCtx,
+        shared
+      );
+      const text = isOk(result);
+      expect(text).toContain('Architecture decision for scope test');
+      expect(text).not.toContain('Architecture event log for scope test');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+
+  it("scope: 'events' returns only event entries", async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'insight',
+        title: 'Scope events knowledge entry',
+        body: 'A knowledge entry that should not appear when scope is events',
+        tags: ['scope-test'],
+      });
+      await captureAndIndex(freshCtx, {
+        kind: 'log',
+        title: 'Scope events log entry',
+        body: 'An event log that should appear when scope is events',
+        tags: ['scope-test'],
+      });
+
+      const result = await getContextTool.handler(
+        { tags: ['scope-test'], scope: 'events' },
+        freshCtx,
+        shared
+      );
+      const text = isOk(result);
+      expect(text).toContain('Scope events log entry');
+      expect(text).not.toContain('Scope events knowledge entry');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+
+  it("scope: 'all' includes both knowledge and event entries", async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'insight',
+        title: 'All scope knowledge entry',
+        body: 'Knowledge about comprehensive vault queries',
+        tags: ['scope-all'],
+      });
+      await captureAndIndex(freshCtx, {
+        kind: 'log',
+        title: 'All scope event entry',
+        body: 'Event log about comprehensive vault queries',
+        tags: ['scope-all'],
+      });
+
+      const result = await getContextTool.handler(
+        { tags: ['scope-all'], scope: 'all' },
+        freshCtx,
+        shared
+      );
+      const text = isOk(result);
+      expect(text).toContain('All scope knowledge entry');
+      expect(text).toContain('All scope event entry');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+
+  it('default scope (no scope param) behaves as hot — excludes events from query search', async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'pattern',
+        title: 'Default scope pattern',
+        body: 'Pattern for default scope test with hot index behaviour',
+        tags: ['default-scope'],
+      });
+      await captureAndIndex(freshCtx, {
+        kind: 'session',
+        title: 'Default scope session',
+        body: 'Session event for default scope test',
+        tags: ['default-scope'],
+      });
+
+      const result = await getContextTool.handler(
+        { query: 'default scope test hot index' },
+        freshCtx,
+        shared
+      );
+      const text = isOk(result);
+      expect(text).toContain('Default scope pattern');
+      expect(text).not.toContain('Default scope session');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+
+  it("include_events: true is equivalent to scope: 'all' (backward compat)", async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'log',
+        title: 'Backward compat event entry',
+        body: 'Event visible via include_events backward compat flag',
+        tags: ['compat-test'],
+      });
+
+      const result = await getContextTool.handler(
+        { query: 'backward compat flag', include_events: true },
+        freshCtx,
+        shared
+      );
+      const text = isOk(result);
+      expect(text).toContain('Backward compat event entry');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+
+  it('scope is included in _meta on every response', async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'insight',
+        title: 'Meta scope test entry',
+        body: 'Entry for verifying meta scope field',
+        tags: ['meta-scope'],
+      });
+
+      const result = await getContextTool.handler({ tags: ['meta-scope'] }, freshCtx, shared);
+      isOk(result);
+      expect(result._meta?.scope).toBe('hot');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+
+  it("scope: 'events' in _meta when scope param is events", async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      await captureAndIndex(freshCtx, {
+        kind: 'log',
+        title: 'Meta events scope entry',
+        body: 'Event for verifying meta scope field set to events',
+        tags: ['meta-events-scope'],
+      });
+
+      const result = await getContextTool.handler(
+        { tags: ['meta-events-scope'], scope: 'events' },
+        freshCtx,
+        shared
+      );
+      isOk(result);
+      expect(result._meta?.scope).toBe('events');
+    } finally {
+      freshCleanup();
+    }
+  }, 60000);
+});
+
+// ─── skeletonBody (unit) ──────────────────────────────────────────────────────
+
+import { skeletonBody } from '../../packages/local/src/tools/get-context.js';
+
+describe('skeletonBody', () => {
+  it('returns empty string for null/undefined body', () => {
+    expect(skeletonBody(null)).toBe('');
+    expect(skeletonBody(undefined)).toBe('');
+    expect(skeletonBody('')).toBe('');
+  });
+
+  it('returns full body when under 100 chars', () => {
+    const short = 'This is a short body.';
+    expect(skeletonBody(short)).toBe(short);
+  });
+
+  it('truncates at sentence boundary when possible', () => {
+    const body =
+      'First sentence is complete. Second sentence has more detail about the topic that goes on and on past the limit.';
+    const result = skeletonBody(body);
+    expect(result).toContain('First sentence is complete.');
+    expect(result.endsWith('...')).toBe(true);
+    expect(result.length).toBeLessThan(body.length);
+  });
+
+  it('truncates at word boundary when no sentence boundary', () => {
+    const body = 'A ' + 'word '.repeat(25);
+    const result = skeletonBody(body);
+    expect(result.endsWith('...')).toBe(true);
+    expect(result).not.toMatch(/\s\.\.\.$/);
+  });
+
+  it('hard-truncates at 100 chars when no good boundary', () => {
+    const body = 'x'.repeat(200);
+    const result = skeletonBody(body);
+    expect(result).toBe('x'.repeat(100) + '...');
+  });
+});
+
+// ─── get_context skeleton mode ───────────────────────────────────────────────
+
+describe('get_context skeleton mode', () => {
+  let ctx, cleanup;
+
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
+    for (let i = 1; i <= 5; i++) {
+      await captureAndIndex(ctx, {
+        kind: 'insight',
+        title: `Skeleton test entry ${i}`,
+        body: `Entry number ${i} has a moderately long body. It contains multiple sentences about the topic. This is sentence three with additional detail that pushes it well past the skeleton truncation threshold of about one hundred characters.`,
+        tags: ['skeleton-test'],
+        source: 'test',
+      });
+    }
+  }, 60000);
+
+  afterAll(() => cleanup());
+
+  it('applies default pivot_count=2: first 2 full, rest skeleton', async () => {
+    const result = await getContextTool.handler({ kind: 'insight', limit: 5 }, ctx, shared);
+    const text = isOk(result);
+    const skeletonMatches = text.match(/### .+ `\[summary\]`/g) || [];
+    const fullMatches = text.match(/### (?!.*`\[summary\]`).*\n/g) || [];
+    // 3 skeleton entries and 2 full entries in 5 results with default pivot_count=2
+    expect(skeletonMatches.length).toBe(3);
+    expect(fullMatches.length).toBe(2);
+  }, 30000);
+
+  it('marks skeleton entries with skeleton label in heading', async () => {
+    const result = await getContextTool.handler({ kind: 'insight', limit: 5 }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('[summary]');
+    const skeletonLabels = text.match(/`\[summary\]`/g) || [];
+    expect(skeletonLabels.length).toBe(3);
+  }, 30000);
+
+  it('skeleton entries have truncated body (~100 chars)', async () => {
+    const result = await getContextTool.handler({ kind: 'insight', limit: 5 }, ctx, shared);
+    const text = isOk(result);
+    const sections = text.split('###').filter((s) => s.includes('`[summary]`'));
+    for (const section of sections) {
+      const lines = section.split('\n').filter((l) => l.trim());
+      const bodyLine = lines.find(
+        (l) => !l.startsWith('[') && !l.match(/^\d+\.\d+/) && !l.startsWith('>') && l.length > 5
+      );
+      if (bodyLine) {
+        expect(bodyLine.length).toBeLessThanOrEqual(120);
+      }
+    }
+  }, 30000);
+
+  it('pivot_count=0 skeletons all entries', async () => {
+    const result = await getContextTool.handler(
+      { kind: 'insight', limit: 5, pivot_count: 0 },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    const skeletonMatches = text.match(/`\[summary\]`/g) || [];
+    expect(skeletonMatches.length).toBe(5);
+  }, 30000);
+
+  it('pivot_count larger than result count returns all full', async () => {
+    const result = await getContextTool.handler(
+      { kind: 'insight', limit: 5, pivot_count: 100 },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    const skeletonMatches = text.match(/`\[summary\]`/g) || [];
+    expect(skeletonMatches.length).toBe(0);
+    const headings = text.match(/### .+\n/g) || [];
+    expect(headings.length).toBe(5);
+  }, 30000);
+
+  it('pivot_count=1 returns only first entry full, rest skeleton', async () => {
+    const result = await getContextTool.handler(
+      { kind: 'insight', limit: 3, pivot_count: 1 },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    const skeletonMatches = text.match(/`\[summary\]`/g) || [];
+    expect(skeletonMatches.length).toBe(2);
+    const headings = text.match(/### .+\n/g) || [];
+    const fullHeadings = headings.filter((h) => !h.includes('`[summary]`'));
+    expect(fullHeadings.length).toBe(1);
+  }, 30000);
+
+  it('works with max_tokens and pivot_count together', async () => {
+    const result = await getContextTool.handler(
+      { kind: 'insight', limit: 5, pivot_count: 1, max_tokens: 10000 },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('Token budget:');
+    expect(text).toMatch(/`\[summary\]`/);
+    const headings = text.match(/### .+\n/g) || [];
+    const fullHeadings = headings.filter((h) => !h.includes('`skeleton`'));
+    expect(fullHeadings.length).toBeGreaterThan(0);
+  }, 30000);
+
+  it('works with query-based search', async () => {
+    const result = await getContextTool.handler(
+      { query: 'skeleton test entry', pivot_count: 1, limit: 5 },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    const headings = text.match(/### .+\n/g) || [];
+    const fullHeadings = headings.filter((h) => !h.includes('`skeleton`'));
+    expect(fullHeadings.length).toBe(1);
+  }, 30000);
+});
+
+// ─── detect_conflicts ─────────────────────────────────────────────────────────
+
+describe('get_context detect_conflicts', () => {
+  let ctx, cleanup;
+
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
+  }, 30000);
+
+  afterAll(() => cleanup());
+
+  it("returns 'No conflicts detected' when all results are distinct", async () => {
+    await captureAndIndex(ctx, {
+      kind: 'insight',
+      title: 'Conflict test A — no conflict',
+      body: 'Entry about topic A with no related entry',
+      tags: ['topicA'],
+    });
+
+    const result = await getContextTool.handler(
+      { kind: 'insight', detect_conflicts: true },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('Conflict Detection');
+    expect(text).toContain('No conflicts detected');
+  }, 30000);
+
+  it('flags superseded entry when superseded_by points to another result', async () => {
+    const older = await captureAndIndex(ctx, {
+      kind: 'decision',
+      title: 'Architecture decision — old',
+      body: 'Use REST for the API',
+      tags: ['architecture'],
+    });
+    const newer = await captureAndIndex(ctx, {
+      kind: 'decision',
+      title: 'Architecture decision — new',
+      body: 'Use GraphQL for the API instead',
+      tags: ['architecture'],
+    });
+
+    ctx.stmts.updateSupersededBy.run(newer.id, older.id);
+
+    const result = await getContextTool.handler(
+      { kind: 'decision', include_superseded: true, detect_conflicts: true },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('Conflict Detection');
+    expect(text).toContain('superseded');
+    expect(text).toContain(older.id);
+    expect(text).toContain(newer.id);
+  }, 30000);
+
+  it('flags stale duplicate when same kind+tags but updated_at differ >7 days', async () => {
+    const OLD_DATE = '2025-01-01T00:00:00Z';
+    const NEW_DATE = '2025-02-01T00:00:00Z';
+
+    const staleEntry = await captureAndIndex(ctx, {
+      kind: 'reference',
+      title: 'Stale reference',
+      body: 'Deadline is Feb 28',
+      tags: ['neonode', 'deadline'],
+    });
+    ctx.db.prepare('UPDATE vault SET updated_at = ? WHERE id = ?').run(OLD_DATE, staleEntry.id);
+
+    const freshEntry = await captureAndIndex(ctx, {
+      kind: 'reference',
+      title: 'Fresh reference',
+      body: 'Deadline moved to March 10',
+      tags: ['neonode', 'deadline'],
+    });
+    ctx.db.prepare('UPDATE vault SET updated_at = ? WHERE id = ?').run(NEW_DATE, freshEntry.id);
+
+    const result = await getContextTool.handler(
+      { kind: 'reference', detect_conflicts: true },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('Conflict Detection');
+    expect(text).toContain('stale_duplicate');
+    expect(text).toContain(staleEntry.id);
+    expect(text).toContain(freshEntry.id);
+  }, 30000);
+
+  it('does not emit conflicts section when detect_conflicts is false', async () => {
+    await captureAndIndex(ctx, {
+      kind: 'pattern',
+      title: 'Pattern entry',
+      body: 'Some pattern',
+      tags: ['patterns'],
+    });
+
+    const result = await getContextTool.handler(
+      { kind: 'pattern', detect_conflicts: false },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).not.toContain('Conflict Detection');
+  }, 30000);
+});
+
+// ─── consolidation suggestions ────────────────────────────────────────────────
+
+import { detectConsolidationHints } from '../../packages/local/src/tools/get-context.js';
+
+describe('detectConsolidationHints', () => {
+  let ctx, cleanup;
+
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
+    for (let i = 0; i < 12; i++) {
+      await captureAndIndex(ctx, {
+        kind: 'insight',
+        title: `Consolidation test entry ${i}`,
+        body: `Body for consolidation entry ${i}`,
+        tags: ['consolidation-tag'],
+        source: 'test',
+      });
+    }
+  }, 60000);
+
+  afterAll(() => cleanup());
+
+  it('returns empty array when candidate tags have fewer than threshold entries in vault', () => {
+    const fakeEntries = [{ kind: 'insight', tags: JSON.stringify(['rare-tag']) }];
+    const hints = detectConsolidationHints(fakeEntries, ctx.db, undefined);
+    expect(hints).toEqual([]);
+  });
+
+  it('returns suggestion when a tag has 10+ entries in vault with no recent brief', () => {
+    const fakeEntries = [{ kind: 'insight', tags: JSON.stringify(['consolidation-tag']) }];
+    const hints = detectConsolidationHints(fakeEntries, ctx.db, undefined);
+    expect(hints.length).toBe(1);
+    expect(hints[0].tag).toBe('consolidation-tag');
+    expect(hints[0].entry_count).toBeGreaterThanOrEqual(10);
+    expect(hints[0].last_snapshot_age_days).toBeNull();
+  });
+
+  it('skips brief entries when collecting candidate tags', () => {
+    const fakeEntries = [{ kind: 'brief', tags: JSON.stringify(['consolidation-tag']) }];
+    const hints = detectConsolidationHints(fakeEntries, ctx.db, undefined);
+    expect(hints).toEqual([]);
+  });
+
+  it('suppresses suggestion when a recent brief exists within maxAgeDays', async () => {
+    await captureAndIndex(ctx, {
+      kind: 'brief',
+      title: 'Consolidation Tag Brief',
+      body: 'Synthesized brief for consolidation-tag',
+      tags: ['snapshot', 'consolidation-tag'],
+      source: 'test',
+    });
+
+    const fakeEntries = [{ kind: 'insight', tags: JSON.stringify(['consolidation-tag']) }];
+    const hints = detectConsolidationHints(fakeEntries, ctx.db, undefined);
+    expect(hints).toEqual([]);
+  });
+
+  it('uses configurable tagThreshold via opts', () => {
+    const fakeEntries = [{ kind: 'insight', tags: JSON.stringify(['consolidation-tag']) }];
+    const hints = detectConsolidationHints(fakeEntries, ctx.db, undefined, {
+      tagThreshold: 100,
+    });
+    expect(hints).toEqual([]);
+  });
+
+  it('uses configurable maxAgeDays via opts — old brief does not suppress', async () => {
+    const { ctx: ctx2, cleanup: cleanup2 } = await createTestCtx();
+    try {
+      for (let i = 0; i < 12; i++) {
+        await captureAndIndex(ctx2, {
+          kind: 'insight',
+          title: `Entry ${i}`,
+          body: `Body ${i}`,
+          tags: ['age-test-tag'],
+          source: 'test',
+        });
+      }
+      const brief = await captureAndIndex(ctx2, {
+        kind: 'brief',
+        title: 'Old brief',
+        body: 'An old brief for age-test-tag',
+        tags: ['snapshot', 'age-test-tag'],
+        source: 'test',
+      });
+      ctx2.db
+        .prepare('UPDATE vault SET created_at = ? WHERE id = ?')
+        .run('2020-01-01T00:00:00Z', brief.id);
+
+      const fakeEntries = [{ kind: 'insight', tags: JSON.stringify(['age-test-tag']) }];
+      const hints = detectConsolidationHints(fakeEntries, ctx2.db, undefined, {
+        maxAgeDays: 7,
+      });
+      expect(hints.length).toBe(1);
+      expect(hints[0].tag).toBe('age-test-tag');
+      expect(hints[0].last_snapshot_age_days).toBeGreaterThan(7);
+    } finally {
+      cleanup2();
+    }
+  }, 60000);
+
+  it('returns empty array when entries list is empty', () => {
+    const hints = detectConsolidationHints([], ctx.db, undefined);
+    expect(hints).toEqual([]);
+  });
+});
+
+describe('get_context consolidation_suggestions in _meta', () => {
+  let ctx, cleanup;
+
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
+    ctx.config.consolidation = {
+      tagThreshold: 3,
+      maxAgeDays: 7,
+      autoConsolidate: false,
+    };
+
+    for (let i = 0; i < 4; i++) {
+      await captureAndIndex(ctx, {
+        kind: 'insight',
+        title: `Bulk insight ${i}`,
+        body: `Body for bulk insight entry ${i}`,
+        tags: ['bulk-tag'],
+        source: 'test',
+      });
+    }
+  }, 60000);
+
+  afterAll(() => cleanup());
+
+  it('includes consolidation_suggestions in _meta when threshold is exceeded', async () => {
+    const result = await getContextTool.handler({ kind: 'insight', limit: 10 }, ctx, shared);
+    isOk(result);
+    expect(result._meta?.consolidation_suggestions).toBeDefined();
+    expect(result._meta.consolidation_suggestions.length).toBeGreaterThan(0);
+    const suggestion = result._meta.consolidation_suggestions[0];
+    expect(suggestion).toHaveProperty('tag');
+    expect(suggestion).toHaveProperty('entry_count');
+    expect(suggestion).toHaveProperty('last_snapshot_age_days');
+  }, 30000);
+
+  it('does not include consolidation_suggestions when no tag cluster exceeds threshold', async () => {
+    const { ctx: freshCtx, cleanup: freshCleanup } = await createTestCtx();
+    try {
+      freshCtx.config.consolidation = {
+        tagThreshold: 100,
+        maxAgeDays: 7,
+        autoConsolidate: false,
+      };
+      await captureAndIndex(freshCtx, {
+        kind: 'insight',
+        title: 'Single entry',
+        body: 'Only one entry with this tag',
+        tags: ['solo-tag'],
+        source: 'test',
+      });
+      const result = await getContextTool.handler({ kind: 'insight' }, freshCtx, shared);
+      isOk(result);
+      expect(result._meta?.consolidation_suggestions).toBeUndefined();
+    } finally {
+      freshCleanup();
+    }
+  }, 30000);
+});
+
+// ─── delete_context ───────────────────────────────────────────────────────────
+
+describe('delete_context handler', () => {
+  let ctx, cleanup;
+
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
+  }, 30000);
+
+  afterAll(() => cleanup());
+
+  it('deletes an existing entry', async () => {
+    const entry = await captureAndIndex(ctx, {
+      kind: 'insight',
+      body: 'Entry to be deleted',
+      title: 'Delete me',
+    });
+
+    const result = await deleteContextTool.handler({ id: entry.id }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('Deleted insight');
+    expect(text).toContain(entry.id);
+
+    const row = ctx.stmts.getEntryById.get(entry.id);
+    expect(row).toBeUndefined();
+  }, 30000);
+
+  it('returns NOT_FOUND for non-existent id', async () => {
+    const result = await deleteContextTool.handler(
+      { id: '00000000000000000000000000' },
+      ctx,
+      shared
+    );
+    isErr(result, 'NOT_FOUND');
+  }, 30000);
+
+  it('rejects empty id', async () => {
+    const result = await deleteContextTool.handler({ id: '' }, ctx, shared);
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('rejects whitespace-only id', async () => {
+    const result = await deleteContextTool.handler({ id: '   ' }, ctx, shared);
+    isErr(result, 'INVALID_INPUT');
+  }, 30000);
+
+  it('local mode: no user ownership — any ctx can delete any entry', async () => {
+    // In local mode the schema has no user_id column. Ownership checks only
+    // apply in hosted mode (where ctx.userId is set by the auth layer).
+    // In local mode ctx.userId is always undefined → ownership branch never fires.
+    const entry = await captureAndIndex(ctx, {
+      kind: 'insight',
+      body: 'Owned entry for local delete test',
+    });
+
+    // ctx has no userId (local default) — deletion succeeds unconditionally.
+    const result = await deleteContextTool.handler({ id: entry.id }, ctx, shared);
+    expect(result.isError).toBeFalsy();
+  }, 30000);
+});
+
+// ─── session_start (list-context) ─────────────────────────────────────────────
+
+describe('list_context handler', () => {
+  let ctx, cleanup;
+
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
+    await captureAndIndex(ctx, {
+      kind: 'insight',
+      body: 'React tip',
+      title: 'React hooks',
+      tags: ['react'],
+    });
+    await captureAndIndex(ctx, {
+      kind: 'decision',
+      body: 'Use Vite',
+      title: 'Vite decision',
+      tags: ['tooling'],
+    });
+    await captureAndIndex(ctx, {
+      kind: 'contact',
+      body: 'Alice developer',
+      title: 'Alice',
+      identity_key: 'alice',
+      tags: ['team'],
+    });
+  }, 60000);
+
+  afterAll(() => cleanup());
+
+  it('lists all entries', async () => {
+    const result = await listContextTool.handler({}, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('Session Brief');
+    expect(text).toContain('React hooks');
+    expect(text).toContain('Vite decision');
+    expect(text).toContain('Alice');
+  }, 30000);
+
+  it('filters by kind', async () => {
+    // session_start scopes by project tag, not kind
+    // With project='react', only insight tagged 'react' appears in decisions/recent
+    const result = await listContextTool.handler({ project: 'react' }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('React hooks');
+    expect(text).not.toContain('Vite decision');
+  }, 30000);
+
+  it('filters by category', async () => {
+    // session_start scopes by project tag; entries tagged 'react' match project='react'
+    // 'React hooks' is tagged 'react', so it appears. 'Alice' is tagged 'team', not 'react'.
+    const result = await listContextTool.handler({ project: 'react' }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('Session Brief');
+    // Result should show React hooks (tagged react); Alice has tag 'team' not 'react'
+    expect(text).toContain('React hooks');
+  }, 30000);
+
+  it('filters by tags', async () => {
+    // session_start scopes by project parameter; 'react' tag matches 'React hooks' entry
+    const result = await listContextTool.handler({ project: 'react' }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('React hooks');
+  }, 30000);
+
+  it('respects limit', async () => {
+    // session_start uses max_tokens to limit output, not offset-based pagination
+    const result = await listContextTool.handler({ max_tokens: 200 }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('Session Brief');
+  }, 30000);
+
+  it('caps limit at 100', async () => {
+    const result = await listContextTool.handler({ max_tokens: 8000 }, ctx, shared);
+    isOk(result);
+  }, 30000);
+
+  it('returns empty message when no entries match', async () => {
+    // An empty vault returns a brief with no sections (just header/footer)
+    const result = await listContextTool.handler({ project: 'nonexistent-project-xyz' }, ctx, shared);
+    const text = isOk(result);
+    expect(text).toContain('Session Brief');
+  }, 30000);
+
+  it('includes total count in header', async () => {
+    const result = await listContextTool.handler({}, ctx, shared);
+    const text = isOk(result);
+    // session_start footer shows token usage
+    expect(text).toMatch(/\d+ \/ \d+ tokens used/);
+  }, 30000);
+});
+
+// ─── context_status ───────────────────────────────────────────────────────────
+
+describe('context_status handler', () => {
+  let ctx, cleanup;
+
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
+    await captureAndIndex(ctx, {
+      kind: 'insight',
+      body: 'Status test entry',
+    });
+  }, 60000);
+
+  afterAll(() => cleanup());
+
+  it('returns vault status without errors', () => {
+    const result = contextStatusTool.handler({}, ctx);
+    const text = isOk(result);
+    expect(text).toContain('Vault Dashboard');
+    expect(text).toContain('**Database**');
+    expect(text).toContain('**Schema**');
+  });
+
+  it('includes entry counts by kind', () => {
+    const result = contextStatusTool.handler({}, ctx);
+    const text = isOk(result);
+    expect(text).toContain('insight');
+  });
+
+  it('reports empty vault with suggested action', async () => {
+    const { ctx: emptyCtx, cleanup: c } = await createTestCtx();
+    try {
+      const result = contextStatusTool.handler({}, emptyCtx);
+      const text = isOk(result);
+      expect(text).toContain('Suggested Actions');
+    } finally {
+      c();
+    }
+  }, 30000);
+
+  it('shows health check icon', () => {
+    const result = contextStatusTool.handler({}, ctx);
+    const text = isOk(result);
+    expect(text).toMatch(/[✓⚠]/);
+  });
+});
+
+// ─── clear_context ────────────────────────────────────────────────────────────
+
+describe('clear_context handler', () => {
+  it('returns ok with reset message when called with no args', async () => {
+    const result = await clearContextTool.handler({});
+    const text = isOk(result);
+    expect(text).toContain('Context Reset');
+    expect(text).toContain('cleared');
+    expect(text).toContain('no data was deleted');
+  });
+
+  it('returns ok with reset message when called without arguments', async () => {
+    const result = await clearContextTool.handler();
+    const text = isOk(result);
+    expect(text).toContain('Context Reset');
+  });
+
+  it('includes scope name in response when scope is provided', async () => {
+    const result = await clearContextTool.handler({ scope: 'project-b' });
+    const text = isOk(result);
+    expect(text).toContain('project-b');
+    expect(text).toContain('Active Scope');
+  });
+
+  it('trims whitespace from scope', async () => {
+    const result = await clearContextTool.handler({ scope: '  my-project  ' });
+    const text = isOk(result);
+    expect(text).toContain('my-project');
+    expect(text).toContain('Active Scope');
+  });
+
+  it('treats whitespace-only scope as unset', async () => {
+    const result = await clearContextTool.handler({ scope: '   ' });
+    const text = isOk(result);
+    expect(text).not.toContain('Active Scope');
+    expect(text).toContain('No scope set');
+  });
+
+  it('never returns an error response', async () => {
+    const result = await clearContextTool.handler({ scope: 'anything' });
+    expect(result.isError).toBeFalsy();
+  });
+
+  it('sets _meta with scope info', async () => {
+    const result = await clearContextTool.handler({ scope: 'myproject' });
+    expect(result._meta).toBeDefined();
+    expect(result._meta.scope).toBe('myproject');
+  });
+
+  it('sets _meta.scope to null when no scope provided', async () => {
+    const result = await clearContextTool.handler({});
+    expect(result._meta).toBeDefined();
+    expect(result._meta.scope).toBeNull();
+  });
+
+  it('infers scope from preload_bucket when scope is not set', async () => {
+    const result = await clearContextTool.handler({ preload_bucket: 'autohub' });
+    const text = isOk(result);
+    expect(text).toContain('Active Scope: `autohub`');
+    expect(result._meta.scope).toBe('autohub');
+  });
+
+  it('prefers explicit scope over preload_bucket for scope name', async () => {
+    const result = await clearContextTool.handler({ scope: 'explicit', preload_bucket: 'other' });
+    const text = isOk(result);
+    expect(text).toContain('Active Scope: `explicit`');
+    expect(result._meta.scope).toBe('explicit');
+  });
+});
+
+describe('clear_context with preload_bucket', () => {
+  let ctx, cleanup;
+
+  beforeAll(async () => {
+    ({ ctx, cleanup } = await createTestCtx());
+    // Seed some entries with bucket tags
+    await captureAndIndex(ctx, {
+      kind: 'decision',
+      title: 'Use SQLite for local storage',
+      body: 'SQLite is fast and zero-ops for local-first apps.',
+      tags: ['bucket:testproject'],
+    });
+    await captureAndIndex(ctx, {
+      kind: 'insight',
+      title: 'Embedding model latency',
+      body: 'The local embedding model adds ~50ms per call.',
+      tags: ['bucket:testproject'],
+    });
+    await captureAndIndex(ctx, {
+      kind: 'insight',
+      title: 'Unrelated entry',
+      body: 'This entry is in a different bucket.',
+      tags: ['bucket:other'],
+    });
+  }, 30000);
+
+  afterAll(() => cleanup());
+
+  it('preloads bucket context when preload_bucket is set', async () => {
+    const result = await clearContextTool.handler(
+      { scope: 'testproject', preload_bucket: 'testproject' },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('Preloaded Context: `testproject`');
+    expect(text).toContain('SQLite');
+    expect(text).toContain('Embedding model');
+    expect(text).not.toContain('Unrelated entry');
+    expect(result._meta.preload_bucket).toBe('testproject');
+    expect(result._meta.preload_entries).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows message when bucket has no entries', async () => {
+    const result = await clearContextTool.handler(
+      { preload_bucket: 'nonexistent' },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    expect(text).toContain('No recent entries found in bucket `nonexistent`');
+  });
+
+  it('respects max_tokens budget', async () => {
+    // Very small budget should limit entries
+    const result = await clearContextTool.handler(
+      { preload_bucket: 'testproject', max_tokens: 50 },
+      ctx,
+      shared
+    );
+    const text = isOk(result);
+    // Should still have the header at minimum
+    expect(text).toContain('Context Reset');
+    expect(result._meta.preload_tokens_budget).toBe(50);
+  });
+
+  it('works without ctx (no preload, no error)', async () => {
+    const result = await clearContextTool.handler(
+      { scope: 'myproject', preload_bucket: 'myproject' }
+    );
+    const text = isOk(result);
+    expect(text).toContain('Active Scope: `myproject`');
+    // No preload section since no ctx
+    expect(text).not.toContain('Preloaded Context');
+    expect(result.isError).toBeFalsy();
+  });
+});

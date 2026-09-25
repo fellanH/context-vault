@@ -1,0 +1,151 @@
+name: release-rust-binaries
+
+# Cross-compiles the Rust engine for every supported target and publishes:
+#   1. One per-platform npm package per target (@context-vault/cli-<triple>), then the
+#      main `context-vault` package that references them as optionalDependencies.
+#   2. A GitHub Release with a raw binary archive + SHA256SUMS per target, consumed by
+#      install.sh / install.ps1 — the Node-free install path. This supersedes the old
+#      rust-release.yml (manual-dispatch, 3/5 targets, separate rust-v* tag scheme) —
+#      one release, one tag, both distribution channels.
+#
+# Trigger: pushing a tag like `v3.21.0`. Requires NPM_TOKEN in repo secrets.
+# This is the CI half of Phase 7 (see project-management/docs/rust-cutover-runbook.md).
+# Prototype the fastembed/ONNX cross-compile on the matrix BEFORE relying on this.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+          # Cross-compiled on Apple Silicon (macos-14): the macos-13 Intel runners are
+          # effectively unavailable on this account (two runs queued 20-40min, never
+          # assigned). clang cross-compiles to x86_64 natively (-arch x86_64), no extra
+          # toolchain; ort/rusqlite resolve the x86_64-apple-darwin target fine.
+          - target: x86_64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      # aarch64-linux is the only true cross-compile (x86 ubuntu host). Install the
+      # cross C toolchain so cc-crate deps (rusqlite bundled SQLite, sqlite-vec, ort)
+      # and the final link find aarch64-linux-gnu-gcc. TLS deps are rustls (no OpenSSL).
+      - name: Install aarch64 cross toolchain (linux)
+        if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+      - name: Build release binary
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+        run: cargo build --release --locked -p context-vault-cli --target ${{ matrix.target }}
+      - name: Stage per-platform package
+        shell: bash
+        run: node scripts/pack-platform.mjs "${{ matrix.target }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: dist/npm/${{ matrix.target }}
+      - name: Archive binary for GitHub Release (unix)
+        if: ${{ !contains(matrix.target, 'windows') }}
+        shell: bash
+        run: |
+          mkdir -p dist/archives
+          tar czf "dist/archives/context-vault-${{ matrix.target }}.tar.gz" \
+            -C "dist/npm/${{ matrix.target }}/bin" context-vault
+      - name: Archive binary for GitHub Release (windows)
+        if: ${{ contains(matrix.target, 'windows') }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/archives | Out-Null
+          Compress-Archive -Path "dist/npm/${{ matrix.target }}/bin/context-vault.exe" `
+            -DestinationPath "dist/archives/context-vault-${{ matrix.target }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.target }}
+          path: dist/archives
+
+  publish:
+    name: publish npm packages
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/npm
+          pattern: cli-*
+      - name: Diagnose npm identity (token scope — non-fatal)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "== npm whoami (identity NPM_TOKEN resolves to) =="
+          npm whoami || echo "(whoami failed — token invalid or read-only)"
+          echo "== packages this token can write under @context-vault =="
+          npm access list packages @context-vault 2>&1 | head -30 || true
+          echo "== end diagnostic =="
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for d in dist/npm/cli-*/; do
+            npm publish --access public "$d"
+          done
+      - name: Publish main context-vault package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --workspace packages/local
+
+  github-release:
+    name: publish GitHub Release (install.sh / install.ps1 source)
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/archives
+          pattern: archive-*
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd dist/archives
+          ls -la
+          sha256sum context-vault-* > SHA256SUMS
+          cat SHA256SUMS
+      - name: Publish GitHub Release
+        # scripts/release.mjs already runs `gh release create` with CHANGELOG-sourced
+        # notes right after the tag push, before this job (which waits on the 5-target
+        # cross-compile matrix) finishes. softprops/action-gh-release updates that
+        # existing release rather than replacing it -- no `body`/`generate_release_notes`
+        # here so the CHANGELOG notes survive; this step only attaches the assets.
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/archives/context-vault-*
+            dist/archives/SHA256SUMS

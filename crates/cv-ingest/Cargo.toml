@@ -1,0 +1,24 @@
+[package]
+name = "cv-ingest"
+version = "0.2.2"
+edition.workspace = true
+license.workspace = true
+description = "Context Vault ingest (URL/project) and file watcher."
+
+[lib]
+name = "cv_ingest"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+notify.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+rusqlite.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

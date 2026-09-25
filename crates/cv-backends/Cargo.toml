@@ -1,0 +1,28 @@
+[package]
+name = "cv-backends"
+version = "0.2.2"
+edition.workspace = true
+license.workspace = true
+description = "Context Vault SQLite backend: storage, FTS+vec search, embeddings."
+
+[lib]
+name = "cv_backends"
+path = "src/lib.rs"
+
+[dependencies]
+cv-engine.workspace = true
+cv-vault.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+fastembed.workspace = true
+rusqlite.workspace = true
+serde_json.workspace = true
+sqlite-vec.workspace = true
+tokio.workspace = true
+ulid.workspace = true
+zerocopy.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

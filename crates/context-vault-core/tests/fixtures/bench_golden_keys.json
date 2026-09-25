@@ -1,0 +1,29 @@
+{
+  "bench-meta": [
+    "cli_version",
+    "schema_fixture",
+    "disk_mode",
+    "workload_mix",
+    "seed",
+    "measurement_note"
+  ],
+  "timings": ["corpus_generation_ms", "sqlite", "total_ms"],
+  "sqlite_fixture": [
+    "db_kind",
+    "disk_mode",
+    "vault_source",
+    "sql_count_indexed_ms",
+    "sql_list_page_100_ms",
+    "sql_fts_match_ms",
+    "sql_bulk_insert_ms",
+    "fts_match_row_count",
+    "fts_query_used",
+    "fts_user_probe",
+    "sql_probes",
+    "mode_a_rg_equivalent",
+    "filter_parity_note"
+  ],
+  "corpus": ["entries_written", "root", "layout", "disk_mode"],
+  "disk_modes": ["a", "b", "c"],
+  "workload_mixes": ["read_heavy", "write_heavy", "balanced"]
+}

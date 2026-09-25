@@ -1,0 +1,29 @@
+[package]
+name = "context-vault-cli"
+version = "4.0.0"
+edition.workspace = true
+license.workspace = true
+description = "Context Vault CLI — engine subcommands (mcp, save/get/search/list/delete, lifecycle). Ships the `context-vault` binary."
+
+[[bin]]
+name = "context-vault"
+path = "src/main.rs"
+
+[features]
+# bench + invoke are maintainer/debug tooling, not part of the shipped command surface —
+# off by default so `context-vault --help` only shows real vault operations.
+dev-tools = []
+
+[dependencies]
+context-vault-core.workspace = true
+cv-lifecycle.workspace = true
+cv-vault.workspace = true
+cv-ingest.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+dirs.workspace = true
+rusqlite.workspace = true
+once_cell.workspace = true

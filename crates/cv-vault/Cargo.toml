@@ -1,0 +1,23 @@
+[package]
+name = "cv-vault"
+version = "0.2.2"
+edition.workspace = true
+license.workspace = true
+description = "Context Vault markdown persistence: frontmatter, formatters, file layout, and entry capture."
+
+[lib]
+name = "cv_vault"
+path = "src/lib.rs"
+
+[dependencies]
+cv-engine.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
