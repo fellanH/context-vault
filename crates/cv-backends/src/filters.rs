@@ -31,8 +31,17 @@ pub(crate) fn filter_clause(opts: &SearchOptions) -> String {
     if let Some(project) = &opts.scope_project {
         c.push_str(&scope_project_filter(project, &esc));
     }
+    if !opts.include_superseded {
+        c.push_str(LIVE_ONLY);
+    }
     c
 }
+
+/// Drops superseded and expired rows. `expires_at` is stored as ISO-8601 with a `T`,
+/// so `now` is formatted the same way; `datetime('now')` uses a space and would keep
+/// a row alive until the end of the day it expired.
+const LIVE_ONLY: &str = " AND v.superseded_by IS NULL \
+    AND (v.expires_at IS NULL OR v.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
 
 /// Project-scope predicate: an entry passes when it carries NO project-identity
 /// tags (`bucket:*` / `seat:*`) — including the ~half of real vaults where `tags`

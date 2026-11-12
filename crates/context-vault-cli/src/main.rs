@@ -5,10 +5,17 @@ mod cmd_lifecycle;
 mod cmd_ingest;
 mod cmd_setup;
 mod cmd_schema;
+mod cmd_collectors;
+mod cmd_export;
+mod cmd_fresh;
+mod cmd_migrate;
+mod cmd_reindex;
+mod cmd_vault;
 mod cmd_move;
 mod cmd_session_end;
 mod cmd_session_backfill;
 mod cmd_recall_hint;
+mod cmd_recall_situation;
 mod session_repo_log;
 mod repo_visibility;
 mod client_paths;
@@ -18,7 +25,7 @@ mod cli;
 #[cfg(feature = "dev-tools")]
 mod ipc_invoke;
 
-use cli::{Cli, Commands, SchemaCommands, VaultCommands};
+use cli::{Cli, Commands, SchemaCommands};
 use clap::Parser;
 
 #[cfg(feature = "dev-tools")]
@@ -70,13 +77,11 @@ async fn dispatch(cmd: Commands) -> Result<()> {
             archive_json,
         ),
         Commands::Mcp => context_vault_core::mcp::run().await,
-        Commands::Reindex { full } => engine_cmd::run_reindex(full).await,
+        Commands::Reindex { full, plan, json, max_seconds } => cmd_reindex::run(cmd_reindex::Flags { full, plan, json, max_seconds }).await,
+        Commands::Migrate { exhaust, no_chat_logs } => cmd_migrate::run(exhaust, no_chat_logs).await,
         Commands::Status => engine_cmd::run_status().await,
         Commands::Doctor => engine_cmd::run_doctor().await,
-        Commands::Vault { command } => match command {
-            VaultCommands::List => engine_cmd::run_vault_list(),
-            VaultCommands::Use { name } => engine_cmd::run_vault_use(&name),
-        },
+        Commands::Vault { command } => cmd_vault::run(command),
         Commands::Schema { command } => match command {
             SchemaCommands::Init => cmd_schema::run_schema_init(),
             SchemaCommands::Show => cmd_schema::run_schema_show(),
@@ -88,6 +93,9 @@ async fn dispatch(cmd: Commands) -> Result<()> {
         }
         Commands::Get { id } => cmd_read::run_get(&id).await,
         Commands::Search { query, limit, format } => cmd_read::run_search(&query, limit, &format).await,
+        Commands::Export { kind, format } => cmd_export::run_export(&kind, &format),
+        Commands::Stale { kind } => cmd_fresh::run_stale(kind),
+        Commands::Verify { id } => cmd_fresh::run_verify(&id).await,
         Commands::List { kind, tier, limit } => cmd_read::run_list(kind, tier, limit).await,
         Commands::Recall { signal, limit, bucket, global } => cmd_read::run_recall(&signal, limit, bucket, global).await,
         Commands::Delete { id } => cmd_write::run_delete(&id).await,

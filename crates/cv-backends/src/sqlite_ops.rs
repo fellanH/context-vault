@@ -41,7 +41,9 @@ pub async fn save_entry(
         .related_to
         .as_ref()
         .map(|r| serde_json::to_string(r).unwrap_or_default());
-    let superseded_by = input.supersedes.as_ref().and_then(|v| v.first()).cloned();
+    // `supersedes` marks the OLD entries as replaced by this one; this row's own
+    // `superseded_by` is never set here (a re-save keeps whatever it had).
+    let supersedes = input.supersedes.clone().unwrap_or_default();
 
     let id = wr.id.clone();
     tokio::task::spawn_blocking({
@@ -50,19 +52,22 @@ pub async fn save_entry(
         move || {
             let conn = db.lock().unwrap();
             conn.execute(
-                "INSERT INTO vault (id, kind, category, title, body, tags, meta, source, file_path, identity_key, tier, indexed, created_at, updated_at, expires_at, superseded_by, related_to) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) \
+                "INSERT INTO vault (id, kind, category, title, body, tags, meta, source, file_path, identity_key, tier, indexed, created_at, updated_at, expires_at, related_to) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16) \
                  ON CONFLICT(file_path) DO UPDATE SET \
                    title=excluded.title, body=excluded.body, tags=excluded.tags, meta=excluded.meta, \
                    source=excluded.source, tier=excluded.tier, indexed=excluded.indexed, \
                    updated_at=excluded.updated_at, expires_at=excluded.expires_at, \
-                   superseded_by=excluded.superseded_by, related_to=excluded.related_to",
+                   related_to=excluded.related_to",
                 params![
                     &id, input.kind, wr.category, input.title, input.body, tags, meta,
                     input.source, wr.file_path, input.identity_key, wr.tier, 1,
-                    wr.created_at, wr.updated_at, input.expires_at, superseded_by, related_to
+                    wr.created_at, wr.updated_at, input.expires_at, related_to
                 ],
             )?;
+            for old in supersedes.iter().filter(|old| **old != id) {
+                conn.execute("UPDATE vault SET superseded_by = ?1 WHERE id = ?2", params![&id, old])?;
+            }
             // Resolve the rowid of the (possibly updated) row by its stable file_path,
             // then refresh the mirrored vector so re-saves don't leave a stale embedding.
             let rowid: i64 = conn.query_row(
@@ -94,6 +99,7 @@ pub async fn init_schema(db: Arc<Mutex<Connection>>, dim: usize) -> Result<()> {
             let conn = db.lock().unwrap();
             let schema = include_str!("../../../fixtures/bench/reference_schema.sql");
             conn.execute_batch(schema)?;
+            super::sqlite_backfill::backfill_situations(&conn)?;
             conn.execute_batch(&format!(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS vault_vec USING vec0(embedding float[{dim}]);"
             ))?;

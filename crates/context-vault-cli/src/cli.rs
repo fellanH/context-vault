@@ -63,12 +63,30 @@ pub enum Commands {
         /// Re-parse every file instead of only files changed since the last reindex.
         #[arg(long)]
         full: bool,
+        /// v5: print what a full run would read and its estimated time, then stop.
+        #[arg(long)]
+        plan: bool,
+        /// Print the plan as JSON.
+        #[arg(long)]
+        json: bool,
+        /// v5: refuse an unattended full run estimated above this many seconds.
+        #[arg(long, default_value_t = 30)]
+        max_seconds: u64,
+    },
+    /// v4 -> v5: copy exhaust into a data vault (originals stay), verify, index, write vaults.toml.
+    Migrate {
+        /// Data vault dir (default: `<vault>-exhaust` beside the vault).
+        #[arg(long)]
+        exhaust: Option<std::path::PathBuf>,
+        /// Leave events/chat-logs transcripts out.
+        #[arg(long)]
+        no_chat_logs: bool,
     },
     /// Print vault status: entry counts, health, resolved paths.
     Status,
     /// Diagnose the install: check db/vault paths and engine health.
     Doctor,
-    /// Manage vaults in the ~/.context-mcp/vaults.json registry.
+    /// Manage vaults: vaults.toml on v5, ~/.context-mcp/vaults.json before migrating.
     Vault {
         #[command(subcommand)]
         command: VaultCommands,
@@ -146,6 +164,21 @@ pub enum Commands {
     },
     /// Print vault statistics as JSON.
     Stats,
+    /// Export one kind's entries from the markdown files: id, title, created, updated,
+    /// the kind's declared fields, then other meta as JSON.
+    Export {
+        #[arg(long)]
+        kind: String,
+        #[arg(long, default_value = "csv")]
+        format: String,
+    },
+    /// List entries older than their kind's vault.toml `fresh_days` window.
+    Stale {
+        #[arg(long)]
+        kind: Option<String>,
+    },
+    /// Mark an entry as checked and still true (sets meta.verified_at to now).
+    Verify { id: String },
     /// Ingest from a URL.
     Ingest { url: String },
     /// Ingest from a project directory.
@@ -201,10 +234,25 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum VaultCommands {
-    /// List registered vaults (active marked with *).
+    /// List registered vaults (default/active marked with *).
     List,
-    /// Switch the active vault by name.
+    /// Switch the active (v5: default) vault by name.
     Use {
+        name: String,
+    },
+    /// v5: register another vault in vaults.toml.
+    Add {
+        name: String,
+        dir: std::path::PathBuf,
+        /// A data vault (append-only segments) instead of a knowledge vault.
+        #[arg(long)]
+        data: bool,
+        /// Search it only when named, not by default.
+        #[arg(long)]
+        by_name_only: bool,
+    },
+    /// v5: forget a vault (its files and index stay on disk).
+    Remove {
         name: String,
     },
 }

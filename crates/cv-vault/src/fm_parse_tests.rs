@@ -42,3 +42,20 @@ fn test_extract_custom_meta() {
     assert!(!custom.contains_key("id"));
     assert!(custom.contains_key("custom_field"));
 }
+
+#[test]
+fn typed_metadata_round_trips_without_coercing_quoted_strings_or_ids() {
+    let fields = vec![
+        ("id".into(), serde_json::json!("123")),
+        ("amount".into(), serde_json::json!(9)),
+        ("ratio".into(), serde_json::json!(0.25)),
+        ("enabled".into(), serde_json::json!(true)),
+        ("numeric_text".into(), serde_json::json!("9")),
+        ("boolean_text".into(), serde_json::json!("true")),
+        ("null_text".into(), serde_json::json!("null")),
+        ("details".into(), serde_json::json!({"count":2,"safe":true})),
+    ];
+    let raw = crate::frontmatter::format_frontmatter(&fields) + "\nBody";
+    let (parsed, _) = parse_frontmatter(&raw);
+    for (key, value) in fields { assert_eq!(parsed.get(&key), Some(&value), "{key}"); }
+}

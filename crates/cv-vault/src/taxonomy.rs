@@ -37,6 +37,9 @@ pub struct KindRule {
     /// Typed `meta` fields for this kind. Empty = no schema, any meta accepted.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub fields: BTreeMap<String, FieldSpec>,
+    /// Days an entry stays fresh after it was last verified or updated (`stale` lists the rest).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fresh_days: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -46,6 +49,7 @@ struct RawKindRule {
     identity: Option<bool>,
     folder: Option<String>,
     fields: Option<BTreeMap<String, FieldSpec>>,
+    fresh_days: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,6 +89,7 @@ impl VaultTaxonomy {
                 identity: false,
                 folder: None,
                 fields: BTreeMap::new(),
+                fresh_days: None,
             },
             kinds: BTreeMap::new(),
         }
@@ -118,6 +123,7 @@ impl VaultTaxonomy {
             identity: file.default.identity.unwrap_or(false),
             folder: file.default.folder,
             fields: file.default.fields.unwrap_or_default(),
+            fresh_days: file.default.fresh_days,
         };
 
         let kinds = file
@@ -130,6 +136,7 @@ impl VaultTaxonomy {
                     identity: raw.identity.unwrap_or(default.identity),
                     folder: raw.folder,
                     fields: raw.fields.unwrap_or_else(|| default.fields.clone()),
+                    fresh_days: raw.fresh_days.or(default.fresh_days),
                 };
                 (kind, rule)
             })

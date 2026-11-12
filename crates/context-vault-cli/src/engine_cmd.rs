@@ -12,7 +12,20 @@ use context_vault_core::engine::{ReindexOptions, VaultEngine};
 use context_vault_core::paths::{resolve_db_path, resolve_vault_dir};
 use context_vault_core::schema::vaults;
 
-pub async fn build_engine() -> Result<SqliteBackend> {
+/// v5 when `vaults.toml` lists vaults (card 38), else v4's SQLite engine as before.
+pub async fn build_engine() -> Result<Arc<dyn VaultEngine>> {
+    if let Some(v5) = cv_index::engine::V5Backend::from_registry()? {
+        return Ok(Arc::new(v5));
+    }
+    Ok(Arc::new(build_sqlite().await?))
+}
+
+/// v4's engine, for commands that edit its database directly (archive, tiers, move).
+/// Refused on a migrated vault: v5 keeps no database, so those edits would go nowhere.
+pub async fn build_sqlite() -> Result<SqliteBackend> {
+    if cv_index::engine::V5Backend::from_registry()?.is_some() {
+        anyhow::bail!("this command edits v4's database; this vault runs on v5 (vaults.toml), which has none");
+    }
     let db = resolve_db_path()?;
     let vault = resolve_vault_dir()?;
     let engine = SqliteBackend::new(&db, &vault, Arc::new(NoOpEmbedder))?;
@@ -39,8 +52,8 @@ pub async fn run_status() -> Result<()> {
     let health = engine.health().await?;
     println!("vault: {} ({})", if health.ok { "ok" } else { "unhealthy" }, health.message);
     println!("entries: {} total, {} indexed", stats.total_entries, stats.indexed_entries);
-    println!("db:        {}", resolve_db_path()?);
-    println!("vault dir: {}", resolve_vault_dir()?);
+    print_paths()?;
+    crate::cmd_vault::print_sizes(engine.as_ref()).await?;
     println!("by kind:");
     for (kind, count) in &stats.by_kind {
         println!("  {}: {}", kind, count);
@@ -48,6 +61,18 @@ pub async fn run_status() -> Result<()> {
     println!("by tier:");
     for (tier, count) in &stats.by_tier {
         println!("  {}: {}", tier, count);
+    }
+    Ok(())
+}
+
+/// On v5 the health line names the vaults; v4's db and vault paths would mislead.
+fn print_paths() -> Result<()> {
+    let registry = cv_core::registry::registry_path()?;
+    if cv_core::Registry::load(&registry)?.vaults.is_empty() {
+        println!("db:        {}", resolve_db_path()?);
+        println!("vault dir: {}", resolve_vault_dir()?);
+    } else {
+        println!("registry:  {}", registry.display());
     }
     Ok(())
 }
@@ -70,7 +95,7 @@ pub async fn run_doctor() -> Result<()> {
     let engine = build_engine().await?;
     let health = engine.health().await?;
     println!("engine health: {} — {}", if health.ok { "OK" } else { "FAIL" }, health.message);
-    Ok(())
+    crate::cmd_collectors::print_collectors(&vault, &db)
 }
 
 pub fn run_vault_list() -> Result<()> {

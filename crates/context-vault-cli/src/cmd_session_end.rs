@@ -16,7 +16,6 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use context_vault_core::backends::SqliteBackend;
 use context_vault_core::engine::{ListOptions, SaveInput, VaultEngine};
 use cv_ingest::ingest::{
     build_signals, extract_insights, format_session_body, normalize_turns, parse_hook_input,
@@ -65,10 +64,10 @@ async fn try_capture() -> Result<Option<(String, usize)>> {
     let log_path = repo_log_or_log_error(&input, &turns, &signals, &candidates);
 
     let engine = engine_cmd::build_engine().await.context("building vault engine")?;
-    let session_id = save_session_entry(&engine, &input, &signals, log_path.as_deref())
+    let session_id = save_session_entry(engine.as_ref(), &input, &signals, log_path.as_deref())
         .await
         .context("saving session entry")?;
-    let insights_saved = save_new_insights(&engine, &candidates, &signals.project).await.unwrap_or(0);
+    let insights_saved = save_new_insights(engine.as_ref(), &candidates, &signals.project).await.unwrap_or(0);
     Ok(Some((session_id, insights_saved)))
 }
 
@@ -108,7 +107,7 @@ fn repo_log_or_log_error(
 /// vault row becomes a pointer to it, not a second copy of its content. Falls
 /// back to the old full-body entry only when the log write itself failed.
 pub(crate) async fn save_session_entry(
-    engine: &SqliteBackend,
+    engine: &dyn VaultEngine,
     input: &HookInput,
     signals: &SessionSignals,
     log_path: Option<&Path>,
@@ -160,7 +159,7 @@ fn pointer_body(log_path: &Path, signals: &SessionSignals) -> String {
 }
 
 pub(crate) async fn save_new_insights(
-    engine: &SqliteBackend,
+    engine: &dyn VaultEngine,
     candidates: &[InsightCandidate],
     project: &str,
 ) -> anyhow::Result<usize> {
@@ -183,7 +182,7 @@ pub(crate) async fn save_new_insights(
 }
 
 async fn save_one_insight(
-    engine: &SqliteBackend,
+    engine: &dyn VaultEngine,
     title: &str,
     body: &str,
     project: &str,
@@ -209,7 +208,7 @@ async fn save_one_insight(
 
 /// Last 100 insight-kind entries tagged `auto-insight`, by lowercased title --
 /// matches the legacy hook's lightweight title-based dedup.
-async fn existing_auto_insight_titles(engine: &SqliteBackend) -> anyhow::Result<HashSet<String>> {
+async fn existing_auto_insight_titles(engine: &dyn VaultEngine) -> anyhow::Result<HashSet<String>> {
     let entries = engine
         .list(ListOptions {
             kind: Some("insight".to_string()),

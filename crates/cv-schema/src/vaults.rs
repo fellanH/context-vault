@@ -3,15 +3,23 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use anyhow::Result;
 
+// vaults.json is camelCase (written by the JS side); snake_case is still read for
+// files an older Rust build wrote.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultEntry {
+    #[serde(alias = "vault_dir")]
     pub vault_dir: String,
+    #[serde(alias = "data_dir")]
     pub data_dir: String,
+    #[serde(alias = "created_at")]
     pub created_at: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VaultRegistry {
+    #[serde(alias = "active_vault")]
     pub active_vault: String,
     pub vaults: BTreeMap<String, VaultEntry>,
 }
@@ -161,3 +169,21 @@ pub fn ensure_default_vault_registered() -> Result<()> {
 #[cfg(test)]
 #[path = "vaults_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod casing_tests {
+    use super::*;
+
+    #[test]
+    fn reads_camel_case_and_snake_case_registries() {
+        let camel = r#"{"activeVault":"default","vaults":{"default":{"vaultDir":"/v","dataDir":"/d","createdAt":"2026-07-02T08:11:56.050Z"}}}"#;
+        let snake = r#"{"active_vault":"default","vaults":{"default":{"vault_dir":"/v","data_dir":"/d","created_at":"2026-07-02"}}}"#;
+        for text in [camel, snake] {
+            let r: VaultRegistry = serde_json::from_str(text).unwrap();
+            assert_eq!(r.active_vault, "default");
+            assert_eq!(r.vaults["default"].vault_dir, "/v");
+        }
+        let written = serde_json::to_string(&serde_json::from_str::<VaultRegistry>(camel).unwrap()).unwrap();
+        assert!(written.contains("\"vaultDir\"") && written.contains("\"activeVault\""), "{written}");
+    }
+}

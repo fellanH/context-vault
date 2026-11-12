@@ -72,9 +72,41 @@ pub fn get_all_clients() -> Vec<ClientConfig> {
 
 pub(crate) fn get_server_entry() -> Value {
     json!({
-        "command": "context-vault",
+        "command": server_command(),
         "args": ["mcp"]
     })
+}
+
+/// The command a client config should start: this binary's own path, so the server starts even
+/// when the client's PATH lacks the install folder (install.sh puts it in ~/.local/bin, which a
+/// fresh macOS shell and every GUI-launched client leave off PATH). Prefers the PATH entry that
+/// resolves to this binary, so a symlink like /opt/homebrew/bin survives upgrades. Falls back to
+/// the bare name when run from an npm/npx cache, whose path is not stable.
+pub(crate) fn server_command() -> String {
+    let Ok(exe) = std::env::current_exe() else {
+        return "context-vault".to_string();
+    };
+    command_for(&exe, std::env::var_os("PATH"))
+}
+
+pub(crate) fn command_for(exe: &std::path::Path, path_var: Option<std::ffi::OsString>) -> String {
+    let exe_str = exe.to_string_lossy();
+    if exe_str.contains("node_modules") || exe_str.contains("_npx") {
+        return "context-vault".to_string();
+    }
+    let canonical = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
+    if let Some(path_var) = path_var {
+        let name = exe.file_name().unwrap_or_default();
+        for dir in std::env::split_paths(&path_var) {
+            let candidate = dir.join(name);
+            if candidate.is_absolute()
+                && std::fs::canonicalize(&candidate).is_ok_and(|c| c == canonical)
+            {
+                return candidate.to_string_lossy().into_owned();
+            }
+        }
+    }
+    canonical.to_string_lossy().into_owned()
 }
 
 pub(crate) fn merge_config(mut existing: Value, new_entry: Value) -> Value {
@@ -153,7 +185,7 @@ mod tests {
 
         assert!(result.get("mcpServers").is_some());
         assert!(result["mcpServers"].get("context-vault").is_some());
-        assert_eq!(result["mcpServers"]["context-vault"]["command"], "context-vault");
+        assert_eq!(result["mcpServers"]["context-vault"]["command"], server_command());
     }
 
     #[test]
@@ -181,7 +213,32 @@ mod tests {
         let entry = get_server_entry();
         let result = merge_config(existing, entry);
 
-        assert_eq!(result["mcpServers"]["context-vault"]["command"], "context-vault");
+        assert_eq!(result["mcpServers"]["context-vault"]["command"], server_command());
         assert_eq!(result["mcpServers"]["context-vault"]["args"][0], "mcp");
+    }
+
+    #[test]
+    fn command_is_absolute_off_path() {
+        let dir = std::env::temp_dir().join(format!("cv-setup-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("context-vault");
+        std::fs::write(&exe, b"").unwrap();
+        let cmd = command_for(&exe, Some("/usr/bin:/bin".into()));
+        assert!(std::path::Path::new(&cmd).is_absolute(), "{cmd}");
+        assert!(cmd.ends_with("context-vault"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn command_prefers_path_entry_and_bare_for_npx() {
+        let dir = std::env::temp_dir().join(format!("cv-setup-test2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("context-vault");
+        std::fs::write(&exe, b"").unwrap();
+        let path = std::env::join_paths([dir.clone()]).unwrap();
+        assert_eq!(command_for(&exe, Some(path)), dir.join("context-vault").to_string_lossy());
+        let npx = std::path::Path::new("/home/u/.npm/_npx/abc/node_modules/.bin/context-vault");
+        assert_eq!(command_for(npx, None), "context-vault");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

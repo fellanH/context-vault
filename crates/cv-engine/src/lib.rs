@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub mod search;
+pub mod situation_meta;
+pub mod situations;
+#[cfg(test)]
+mod situation_tests;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
@@ -72,6 +76,10 @@ pub struct SearchOptions {
     /// project-identity tags are considered global and always match. `None`
     /// disables scoping entirely.
     pub scope_project: Option<String>,
+    /// Superseded (`superseded_by` set) and expired (`expires_at` past) entries are
+    /// left out of search unless this is set.
+    #[serde(default)]
+    pub include_superseded: bool,
     pub limit: usize,
     pub offset: usize,
 }
@@ -129,14 +137,18 @@ pub struct HealthStatus {
     pub message: String,
 }
 
+// async_trait adds must_use to its boxed Future, which is already must_use.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Embedder: Send + Sync {
     async fn embed(&self, text: &str) -> anyhow::Result<Vec<f32>>;
     fn dim(&self) -> usize;
 }
 
+// async_trait adds must_use to its boxed Future, which is already must_use.
+#[allow(clippy::double_must_use)]
 #[async_trait]
-pub trait VaultEngine: Send + Sync {
+pub trait VaultEngine: Send + Sync + situations::SituationEngine {
     async fn save(&self, input: SaveInput) -> anyhow::Result<SaveOutput>;
     async fn delete(&self, id: &str) -> anyhow::Result<()>;
     async fn get(&self, id: &str) -> anyhow::Result<Option<Entry>>;

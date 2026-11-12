@@ -1,83 +1,40 @@
 # Connect in 2 Minutes (Hosted)
 
-Use Context Vault in the cloud — no local install, no Node.js. Works across devices. Sign up at [app.context-vault.com](https://app.context-vault.com), get an API key, then add the MCP endpoint to your AI tool.
+Use Context Vault in the cloud: no local install, and it works across devices. Your AI tool connects to the hosted MCP endpoint and asks you to sign in once.
 
-**Endpoints:**
+| Service   | URL                                    |
+| --------- | -------------------------------------- |
+| MCP       | `https://api.context-vault.com/mcp`    |
+| Dashboard | `https://app.context-vault.com/`       |
+| Health    | `https://api.context-vault.com/health` |
+| Privacy   | `https://context-vault.com/privacy`    |
 
-| Service   | URL                                                    |
-| --------- | ------------------------------------------------------ |
-| Dashboard | `https://app.context-vault.com/`                       |
-| MCP       | `https://www.context-vault.com/mcp`                    |
-| OpenAPI   | `https://www.context-vault.com/api/vault/openapi.json` |
-| Health    | `https://www.context-vault.com/health`                 |
-| Privacy   | `https://www.context-vault.com/privacy`                |
+The hosted endpoint uses OAuth. API keys from the dashboard do not authorize `/mcp`; your client opens a sign-in page instead (Google or email), and you choose whether it may write.
 
 ---
 
-## 1. Get an API key
-
-1. Go to [app.context-vault.com](https://app.context-vault.com)
-2. Sign up (Google OAuth or email)
-3. Copy your `cv_...` API key from the dashboard
-
-**Or** use the CLI connect command — it auto-detects tools and configures MCP:
+## 1. Claude Code
 
 ```bash
-npx context-vault connect --key cv_YOUR_API_KEY
+claude mcp add --transport http context-vault https://api.context-vault.com/mcp
 ```
 
----
-
-## 2. Claude Code
-
-Add to your Claude Code MCP config (`~/.claude/config.json` or project `.mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "context-vault": {
-      "url": "https://www.context-vault.com/mcp",
-      "headers": {
-        "Authorization": "Bearer cv_YOUR_API_KEY"
-      }
-    }
-  }
-}
-```
-
-Full setup walkthrough: [Context Vault + Claude Code: 5-Minute Setup](https://www.context-vault.com/blog/context-vault-claude-code-5-minute-setup)
+Then run `/mcp` in Claude Code, pick `context-vault` and sign in.
 
 ---
 
-## 3. Cursor
+## 2. Cursor and other MCP clients
 
-Add an MCP server in Cursor settings (Settings > MCP):
-
-- **URL:** `https://www.context-vault.com/mcp`
-- **Header:** `Authorization: Bearer cv_YOUR_API_KEY`
-
-Full setup walkthrough: [Context Vault + Cursor: Setup and Best Practices](https://www.context-vault.com/blog/context-vault-cursor-setup-best-practices)
+Add a remote MCP server with the URL `https://api.context-vault.com/mcp` and no headers. The client opens the sign-in page on first use.
 
 ---
 
-## 4. GPT Actions
-
-1. Import OpenAPI from `https://www.context-vault.com/api/vault/openapi.json`
-2. Configure Bearer auth with your `cv_...` key
-3. Set privacy URL to `https://www.context-vault.com/privacy`
-
-Full setup walkthrough: [Using MCP Memory with GPT Actions](https://www.context-vault.com/blog/using-mcp-memory-with-gpt-actions)
-
----
-
-## 5. Validate
+## 3. Validate
 
 In your AI client, run:
 
-1. `context_status` — should show vault info
+1. `context_status`, which shows your vault
 2. `save_context` with a short insight
 3. `get_context` with a matching query
 
-All three succeed — you're ready.
-
-**Health check (unauthenticated):** `GET https://www.context-vault.com/health` returns `{"status":"ok",...}` — use this to verify the hosted service is reachable before debugging your MCP config.
+For the free local vault instead, see [Get started](https://context-vault.com/get-started).

@@ -16,6 +16,7 @@ cv-schema.workspace = true
 cv-lifecycle.workspace = true
 cv-ingest.workspace = true
 cv-backends.workspace = true
+cv-index.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 chrono.workspace = true

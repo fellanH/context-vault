@@ -10,7 +10,7 @@ use super::{TaxonomyFile, VaultTaxonomy, VAULT_TOML_FILENAME};
 /// field specs are covered by `deny_unknown_fields`; this covers the tables that
 /// stay lenient for `load()`'s sake.
 const TOP_LEVEL_KEYS: &[&str] = &["schema_version", "vault", "default", "kinds"];
-const KIND_KEYS: &[&str] = &["category", "tier", "identity", "folder", "fields"];
+const KIND_KEYS: &[&str] = &["category", "tier", "identity", "folder", "fields", "fresh_days"];
 
 impl VaultTaxonomy {
     /// Load for the write path: like `load()`, but a vault.toml that exists and fails

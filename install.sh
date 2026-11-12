@@ -98,18 +98,26 @@ main() {
 
   info "Installed context-vault $version to $INSTALL_DIR/context-vault"
 
+  cmd="context-vault"
   case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
     *)
+      cmd="$INSTALL_DIR/context-vault"
+      case "${SHELL:-}" in
+        */zsh) profile="~/.zshrc" ;;
+        */bash) profile="~/.bashrc" ;;
+        *) profile="your shell profile" ;;
+      esac
       info ""
-      info "$INSTALL_DIR is not on your PATH. Add it, e.g.:"
-      info "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zshrc   # or ~/.bashrc"
-      info "then restart your shell."
+      info "$INSTALL_DIR is not on your PATH. Add it to $profile, then open a new terminal:"
+      info "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> $profile"
       ;;
   esac
 
   info ""
-  info "Next: run 'context-vault setup' to register the MCP server with your AI tools."
+  info "Next:"
+  info "  $cmd setup        # connects Claude Code, Cursor and the other AI tools it finds"
+  info "Then restart your AI tool and say: \"Save to my vault: ...\". In a new session: \"Search my vault: ...\""
 }
 
 main "$@"

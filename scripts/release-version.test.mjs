@@ -1,0 +1,20 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { bumpNativeVersion } from './release-version.mjs';
+test('native CLI and npm lock metadata advance together without changing engine versions',t=>{
+  const root=mkdtempSync(join(tmpdir(),'cv-version-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+  mkdirSync(join(root,'crates/context-vault-cli'),{recursive:true});
+  writeFileSync(join(root,'crates/context-vault-cli/Cargo.toml'),'[package]\nname = "context-vault-cli"\nversion = "4.0.0"\n');
+  writeFileSync(join(root,'Cargo.lock'),'[[package]]\nname = "context-vault-cli"\nversion = "4.0.0"\n\n[[package]]\nname = "cv-engine"\nversion = "0.2.2"\n');
+  writeFileSync(join(root,'package-lock.json'),JSON.stringify({version:'4.0.0',packages:{'':{version:'4.0.0'},'packages/local':{version:'4.0.0',optionalDependencies:{'@context-vault/cli-target':'4.0.0'}}}}));
+  bumpNativeVersion(root,'4.0.1');
+  assert.match(readFileSync(join(root,'crates/context-vault-cli/Cargo.toml'),'utf8'),/version = "4.0.1"/);
+  assert.match(readFileSync(join(root,'Cargo.lock'),'utf8'),/name = "cv-engine"\nversion = "0.2.2"/);
+  assert.match(readFileSync(join(root,'Cargo.lock'),'utf8'),/name = "context-vault-cli"\nversion = "4.0.1"/);
+  const lock=JSON.parse(readFileSync(join(root,'package-lock.json')));
+  assert.equal(lock.version,'4.0.1');assert.equal(lock.packages[''].version,'4.0.1');
+  assert.equal(lock.packages['packages/local'].optionalDependencies['@context-vault/cli-target'],'4.0.1');
+});

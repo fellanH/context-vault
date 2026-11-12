@@ -1,7 +1,7 @@
 //! Ingest commands: ingest URL, ingest project directory.
 
 use anyhow::Result;
-use context_vault_core::engine::{SaveInput, VaultEngine};
+use context_vault_core::engine::SaveInput;
 use context_vault_core::ingest::project::ingest_project;
 use context_vault_core::ingest::url::{ingest_url, IngestUrlOpts};
 

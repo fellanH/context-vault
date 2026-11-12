@@ -14,6 +14,14 @@ pub(super) mod handlers_read;
 pub(super) mod handlers_recall;
 pub(super) mod handlers_write;
 pub(super) mod handlers_ingest;
+pub(super) mod handlers_situations;
+pub(super) mod handlers_schema;
+#[cfg(test)]
+mod handlers_situations_tests;
+#[cfg(test)]
+mod handlers_read_tests;
+#[cfg(test)]
+mod handlers_schema_tests;
 
 pub use stdio::run;
 

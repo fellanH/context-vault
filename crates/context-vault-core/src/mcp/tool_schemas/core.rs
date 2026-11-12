@@ -12,15 +12,14 @@ pub fn save_context_schema() -> Value {
             "body": { "type": "string", "description": "Main content. Required when creating a new entry." },
             "tags": { "type": "array", "items": { "type": "string" }, "description": "Tags used to categorize and aid search" },
             "meta": { "type": "object", "description": "Additional structured metadata" },
+            "situations": { "type": ["array", "null"], "items": { "type": "string" }, "description": "When this entry matters, e.g. fresh, post-compaction, before-deploy, before-design, debugging, onboarding. Lowercase-kebab, max 6, 32 chars each. context_for loads them by situation. null or [] clears (on update)." },
+            "situation_order": { "type": ["integer", "null"], "description": "Load order within a situation, 0..100000, lowest first (default 100). Alone, it re-orders an existing entry." },
             "source": { "type": ["string", "null"], "description": "Where this knowledge came from" },
             "identity_key": { "type": ["string", "null"], "description": "Required when kind is an entity kind" },
             "expires_at": { "type": ["string", "null"], "description": "ISO date marking TTL expiry" },
             "supersedes": { "type": "array", "items": { "type": "string" }, "description": "Array of entry IDs this entry supersedes" },
             "related_to": { "type": "array", "items": { "type": "string" }, "description": "Array of related entry IDs" },
-            "dry_run": { "type": "boolean", "description": "Check whether similar entries already exist, without saving" },
-            "similarity_threshold": { "type": "number", "description": "Cosine similarity threshold (0–1)" },
-            "tier": { "enum": ["ephemeral", "working", "durable"], "description": "Memory tier governing lifecycle" },
-            "conflict_resolution": { "enum": ["suggest", "off"], "description": "Conflict resolution mode" }
+            "tier": { "enum": ["ephemeral", "working", "durable"], "description": "Memory tier governing lifecycle" }
         },
         "required": []
     })
@@ -33,19 +32,13 @@ pub fn get_context_schema() -> Value {
             "query": { "type": ["string", "null"], "description": "Search query (natural language or keywords)" },
             "kind": { "type": ["string", "null"], "description": "Filter by kind" },
             "category": { "type": ["string", "null"], "description": "Filter by category — vault-defined via vault.toml, not a fixed set" },
-            "identity_key": { "type": ["string", "null"], "description": "For entity lookup: exact match" },
-            "tags": { "type": "array", "items": { "type": "string" }, "description": "Filter by tags" },
-            "buckets": { "type": "array", "items": { "type": "string" }, "description": "Filter by project buckets" },
+            "tags": { "type": "array", "items": { "type": "string" }, "description": "Filter by tags (an entry must carry all of them)" },
             "since": { "type": ["string", "null"], "description": "Return entries created after this date" },
             "until": { "type": ["string", "null"], "description": "Return entries created before this date" },
             "limit": { "type": "integer", "description": "Max results to return (default 10)" },
-            "include_superseded": { "type": "boolean", "description": "Include superseded entries" },
-            "detect_conflicts": { "type": "boolean", "description": "Compare results for conflicts" },
-            "max_tokens": { "type": "integer", "description": "Limit output to this token budget" },
-            "pivot_count": { "type": "integer", "description": "Number of top results with full body" },
-            "include_ephemeral": { "type": "boolean", "description": "Include ephemeral tier entries" },
-            "scope": { "enum": ["hot", "events", "all"], "description": "Index scope" },
-            "body_limit": { "type": "integer", "description": "Max characters of body per entry" }
+            "include_superseded": { "type": "boolean", "description": "Include superseded and expired entries (left out by default)" },
+            "max_tokens": { "type": "integer", "description": "Approximate output budget in tokens (about 4 characters each); results past it are left out" },
+            "body_limit": { "type": "integer", "description": "Max characters of the body line shown per entry" }
         },
         "required": []
     })
@@ -57,14 +50,7 @@ pub fn list_context_schema() -> Value {
         "properties": {
             "kind": { "type": ["string", "null"], "description": "Filter by kind" },
             "category": { "type": ["string", "null"], "description": "Filter by category — vault-defined via vault.toml, not a fixed set" },
-            "tags": { "type": "array", "items": { "type": "string" }, "description": "Filter by tags" },
-            "buckets": { "type": "array", "items": { "type": "string" }, "description": "Filter by buckets" },
-            "since": { "type": ["string", "null"], "description": "Return entries created after this date" },
-            "until": { "type": ["string", "null"], "description": "Return entries created before this date" },
-            "limit": { "type": "integer", "description": "Max results to return (default 10)" },
-            "include_superseded": { "type": "boolean", "description": "Include superseded entries" },
-            "include_ephemeral": { "type": "boolean", "description": "Include ephemeral entries" },
-            "include_unindexed": { "type": "boolean", "description": "Include unindexed entries" }
+            "limit": { "type": "integer", "description": "Max results to return (default 10)" }
         },
         "required": []
     })

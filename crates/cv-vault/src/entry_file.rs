@@ -152,13 +152,6 @@ pub fn write_entry_file(
 
     fs::create_dir_all(&dir)?;
 
-    let fm_fields = build_fm_fields(kind, &params.category, &params);
-    let md_body = format_body(kind, FormatInput {
-        title: params.title.clone(),
-        body: params.body.clone(),
-        meta: params.meta.clone().flatten(),
-    });
-
     let filename = compute_filename(
         taxonomy.is_identity(kind),
         &params.identity_key,
@@ -168,11 +161,28 @@ pub fn write_entry_file(
     );
 
     let file_path = dir.join(&filename);
-    let md_content = format_frontmatter(&fm_fields) + &md_body;
-
-    fs::write(&file_path, &md_content)?;
+    fs::write(&file_path, render_entry_file(kind, &params))?;
 
     Ok(file_path.to_string_lossy().to_string())
+}
+
+/// Rewrites an existing entry's file at its current path (update in place).
+pub fn write_entry_file_at(file_path: &str, kind: &str, params: WriteEntryParams) -> Result<String> {
+    if let Some(dir) = PathBuf::from(file_path).parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::write(file_path, render_entry_file(kind, &params))?;
+    Ok(file_path.to_string())
+}
+
+fn render_entry_file(kind: &str, params: &WriteEntryParams) -> String {
+    let fm_fields = build_fm_fields(kind, &params.category, params);
+    let md_body = format_body(kind, FormatInput {
+        title: params.title.clone(),
+        body: params.body.clone(),
+        meta: params.meta.clone().flatten(),
+    });
+    format_frontmatter(&fm_fields) + &md_body
 }
 
 #[cfg(test)]

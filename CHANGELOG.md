@@ -3,7 +3,50 @@
 All notable changes to context-vault are documented here.
 
 
-## Unreleased
+## [Unreleased]
+
+### Fixed — a stranger's first memory
+- `setup` registers the binary's own absolute path, so the MCP server starts even when `~/.local/bin` is not on the AI tool's PATH (the default on macOS and for every GUI-launched client).
+- The MCP server sends `instructions` at initialize: "remember" and "save an insight" go to the vault, not only to a client's built-in memory, and questions about earlier sessions search the vault first.
+- README Quick start is the timed path (install, setup, restart, save, recall in a new session) and drops claims 4.0 doesn't keep (`~/vault`, a starter entry, a daemon, removed CLI commands). The installer ends with the exact next command.
+
+### Added — v5 engine, opt-in with `context-vault migrate`
+- One command moves a vault onto v5: `context-vault migrate` copies machine-made records (sessions, logs, tool events, chat transcripts) into a separate data vault, verifies the copy (counts per kind, every id present, sampled records byte for byte), builds the indexes and only then switches the machine over. Your notes stay where they are; nothing is deleted. If any step fails, nothing switches and the command can be run again. See `docs/upgrade-to-v5.md`.
+- v5 searches plain files with a tantivy index: no SQLite, no embedding model, no work at startup. Default search covers your notes, not the machine records; the data vault is searched by name.
+- The existing MCP tools work unchanged on v5 (save, get, list, delete, search, `context_for`, `list_situations`, `vault_map`), plus `list_vaults`.
+- CLI on v5: `vault add|list|remove|use` over `~/.context-mcp/vaults.toml`; `reindex --full` prints its plan (files, size, estimated time from the last measured run) and refuses when unattended over `--max-seconds` (default 30); `reindex --plan --json` for scripts.
+- Machines that don't run `migrate` keep v4 exactly as before.
+
+### Fixed
+- Tool schemas list only parameters the handlers read; `get_context` honours `kind`, `category`, `tags`, `since`, `until`, `body_limit` and `max_tokens`.
+- Search leaves out superseded and expired entries by default (`include_superseded` brings them back).
+- `save_context` stores `supersedes`, `expires_at` and `related_to`, and supersedes marks the old entry, not the new one.
+- `vault list` reads the camelCase `vaults.json`.
+- Refuses when only one of the vault dir and the db path comes from the environment (the other would silently fall back to the main vault).
+
+### Added
+- `vault_schema` MCP tool: what `save_context` accepts in this vault, per kind.
+- `fresh_days` per kind, `context-vault stale` and `context-vault verify`.
+- `context-vault export --kind <kind> --format csv|json`.
+- `doctor` reports a verdict per collector from `collectors.toml`, flags writers not registered there and registered background jobs that are not loaded.
+
+### Added — situations and the vault map
+- Entries take `situations` (max 6, lowercase-kebab) and `situation_order` on `save_context` (create and update by id); they are stored in the entry's frontmatter, so a reindex keeps them.
+- New MCP tools `context_for` (ordered entries for a situation, ~12k characters a page, cursor), `list_situations` and `vault_map` (generated overview, cached, regenerated after 24 h or a 2% / 50 entry change).
+- `recall-hint` handles a SessionStart payload: `source: compact` injects the `post-compaction` entries (capped at 4,000 characters; `context_for` has the rest). Other sources inject nothing. Register a SessionStart hook running `context-vault recall-hint` to enable it.
+- Schema: additive index table `vault_situations` (trigger-maintained; only well-formed kebab-case arrays are indexed), `vault_map` cache, `idx_vault_kind_cat_created`. A one-time backfill (about 2 s on 86k entries, marker row in `index_state`) indexes entries that already carry situations; no reindex.
+- Stored malformed situations are never validated on update: only values you pass are checked, so a hand-edited entry stays editable.
+
+## [4.0.1] — 2026-10-04
+
+### Fixed — metadata integrity (October 12 follow-up)
+- Typed metadata preserves numbers, booleans and objects through Markdown; numeric/boolean-looking strings are quoted to retain their type.
+- A fresh or incremental SQLite reindex restores custom metadata from source files instead of dropping it. Existing unquoted legacy scalar values follow JSON types; reserved IDs/dates remain strings.
+
+### Fixed — installation and release reliability
+- Native CLI documentation and installer targets now match the Rust distribution.
+- Releases verify the private build artifacts and publish the allowlisted public mirror and matching checksums together.
+- Embedding models use a writable cache directory.
 
 ### Changed — no reindex at MCP startup; `reindex` is incremental
 - The MCP server no longer walks the whole vault on every start. That walk measured 42–48 s wall and 24 CPU-s per session on an 85k-file vault. Saves index themselves; run `context-vault reindex` after editing files outside the engine.

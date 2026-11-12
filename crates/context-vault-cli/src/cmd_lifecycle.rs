@@ -19,7 +19,7 @@ use cv_lifecycle::{
 use crate::engine_cmd;
 
 pub async fn run_archive(days: Option<u32>) -> Result<()> {
-    let engine = engine_cmd::build_engine().await?;
+    let engine = engine_cmd::build_sqlite().await?;
     let days = days.unwrap_or(365) as i64;
 
     let mut config: HashMap<String, Option<i64>> = HashMap::new();
@@ -45,7 +45,7 @@ pub async fn run_archive(days: Option<u32>) -> Result<()> {
 }
 
 pub async fn run_restore(id: &str) -> Result<()> {
-    let engine = engine_cmd::build_engine().await?;
+    let engine = engine_cmd::build_sqlite().await?;
     let db = engine.raw_db();
     let vault_dir = engine.vault_dir_path();
     let result = {
@@ -86,7 +86,7 @@ fn apply_summaries(conn: &rusqlite::Connection, rows: &[(String, String)]) -> Re
 }
 
 pub async fn run_summarize() -> Result<()> {
-    let engine = engine_cmd::build_engine().await?;
+    let engine = engine_cmd::build_sqlite().await?;
     let db = engine.raw_db();
 
     let updated = {
@@ -100,7 +100,7 @@ pub async fn run_summarize() -> Result<()> {
 }
 
 pub async fn run_tier() -> Result<()> {
-    let engine = engine_cmd::build_engine().await?;
+    let engine = engine_cmd::build_sqlite().await?;
     let db = engine.raw_db();
     let report = {
         let conn = db.lock().unwrap();
@@ -124,7 +124,7 @@ pub async fn run_tier() -> Result<()> {
 }
 
 pub async fn run_assemble(ids: Vec<String>) -> Result<()> {
-    let engine = engine_cmd::build_engine().await?;
+    let engine = engine_cmd::build_sqlite().await?;
 
     for id in &ids {
         if let Some(entry) = engine.get(id).await? {

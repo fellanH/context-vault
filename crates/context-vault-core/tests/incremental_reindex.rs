@@ -95,3 +95,22 @@ async fn full_reparses_everything() {
     let s = e.reindex(ReindexOptions { full: true }).await.unwrap();
     assert_eq!(s.entries_reindexed, 2);
 }
+
+#[tokio::test]
+async fn fresh_rebuild_restores_typed_metadata_and_tracks_metadata_edits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (e, vault) = backend(tmp.path()).await;
+    let path = vault.join("evidence.md");
+    std::fs::write(&path, "---\nid: evidence\nkind: insight\ncreated: 2026-10-12T00:00:00Z\namount: 9\nenabled: true\nsource_ref: pricing-page\nverified_at: 2026-10-12\n---\nEvidence body").unwrap();
+    e.reindex(ReindexOptions { full: true }).await.unwrap();
+    let entry = e.get("evidence").await.unwrap().unwrap();
+    let meta = entry.meta.unwrap();
+    assert_eq!(meta["amount"], serde_json::json!(9));
+    assert_eq!(meta["enabled"], serde_json::json!(true));
+    assert_eq!(meta["source_ref"], serde_json::json!("pricing-page"));
+    std::fs::write(&path, "---\nid: evidence\nkind: insight\namount: 12\nsource_ref: corrected-page\n---\nEvidence body").unwrap();
+    e.reindex(ReindexOptions { full: true }).await.unwrap();
+    let meta = e.get("evidence").await.unwrap().unwrap().meta.unwrap();
+    assert_eq!(meta["amount"], serde_json::json!(12));
+    assert_eq!(meta["source_ref"], serde_json::json!("corrected-page"));
+}

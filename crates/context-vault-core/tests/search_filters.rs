@@ -38,3 +38,35 @@ async fn fts_search_applies_kind_filter() {
     assert_eq!(only_insights.len(), 2, "only the two insights survive the kind filter");
     assert!(only_insights.iter().all(|s| s.entry.kind == "insight"));
 }
+
+/// Card 19: superseded and expired rows stay out of default search;
+/// `include_superseded` brings them back.
+#[tokio::test]
+async fn fts_search_skips_superseded_and_expired() {
+    let (e, tmp) = make().await;
+    let old = e.save(entry("decision", "widget old decision")).await.unwrap().id;
+    let new = e.save(entry("decision", "widget new decision")).await.unwrap().id;
+    let gone = e.save(entry("decision", "widget expired decision")).await.unwrap().id;
+    let later = e.save(entry("decision", "widget expires later")).await.unwrap().id;
+
+    let conn = rusqlite::Connection::open(tmp.path().join("vault.db")).unwrap();
+    conn.execute("UPDATE vault SET superseded_by = ?1 WHERE id = ?2", [&new, &old]).unwrap();
+    conn.execute("UPDATE vault SET expires_at = '2020-01-01T00:00:00Z' WHERE id = ?1", [&gone]).unwrap();
+    conn.execute("UPDATE vault SET expires_at = '2999-01-01T00:00:00Z' WHERE id = ?1", [&later]).unwrap();
+
+    let ids = |r: Vec<context_vault_core::engine::ScoredEntry>| {
+        let mut v: Vec<String> = r.into_iter().map(|s| s.entry.id).collect();
+        v.sort();
+        v
+    };
+    let mut live = vec![new.clone(), later.clone()];
+    live.sort();
+    let default = e.fts_search("widget", SearchOptions { limit: 10, ..Default::default() }).await.unwrap();
+    assert_eq!(ids(default), live, "only the live rows by default");
+
+    let all = e
+        .fts_search("widget", SearchOptions { include_superseded: true, limit: 10, ..Default::default() })
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 4, "include_superseded restores superseded and expired rows");
+}

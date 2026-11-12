@@ -1,21 +1,4 @@
-This repository uses a dual-license model:
-
-  packages/core/     — MIT License
-  packages/local/    — MIT License
-  packages/hosted/   — Business Source License 1.1 (BSL-1.1)
-
-The MIT-licensed packages (core and local) are free and open source. You can
-use, modify, and distribute them without restriction.
-
-The BSL-licensed package (hosted) may be used for any purpose except offering
-it as a competing hosted service. On the Change Date (2030-02-18) the hosted
-package converts to MIT.
-
-See each package's LICENSE file for full terms.
-
----
-
-MIT License (packages/core, packages/local)
+MIT License
 
 Copyright (c) 2026 Felix Hellstrom
 

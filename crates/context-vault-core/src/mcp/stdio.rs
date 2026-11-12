@@ -10,11 +10,7 @@ use crate::paths::{resolve_db_path, resolve_model_cache_dir, resolve_vault_dir};
 use super::tools;
 
 pub async fn run() -> Result<()> {
-    let db_path = resolve_db_path()?;
-    let vault_dir = resolve_vault_dir()?;
-    let embedder = init_embedder().await?;
-    let backend = Arc::new(SqliteBackend::new(&db_path, &vault_dir, embedder)?);
-    let engine: Arc<dyn VaultEngine> = backend.clone();
+    let engine = open_engine().await?;
 
     engine.init().await?;
 
@@ -57,6 +53,18 @@ async fn process_one_message<R: BufRead, W: Write>(
     let reply = dispatch_method(engine, method, id, &msg).await;
     write_mcp_message(writer, &reply)?;
     Ok(true)
+}
+
+/// v5 when `vaults.toml` lists vaults (written by `migrate`, card 38), else v4 as before.
+async fn open_engine() -> Result<Arc<dyn VaultEngine>> {
+    if let Some(v5) = cv_index::engine::V5Backend::from_registry()? {
+        eprintln!("[context-vault] v5 engine (vaults.toml)");
+        return Ok(Arc::new(v5));
+    }
+    let db_path = resolve_db_path()?;
+    let vault_dir = resolve_vault_dir()?;
+    let embedder = init_embedder().await?;
+    Ok(Arc::new(SqliteBackend::new(&db_path, &vault_dir, embedder)?))
 }
 
 async fn init_embedder() -> Result<Arc<dyn Embedder>> {

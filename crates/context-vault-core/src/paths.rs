@@ -26,15 +26,38 @@ fn read_config_json(home: &str) -> Option<Value> {
     serde_json::from_str(&contents).ok()
 }
 
+fn env_db_path() -> Option<String> {
+    std::env::var("CONTEXT_VAULT_DB_PATH").or_else(|_| std::env::var("CONTEXT_MCP_DB_PATH")).ok()
+}
+
+fn env_vault_dir() -> Option<String> {
+    std::env::var("CONTEXT_VAULT_VAULT_DIR").or_else(|_| std::env::var("CONTEXT_MCP_VAULT_DIR")).ok()
+}
+
+/// Setting only one of the vault dir / db env vars pairs a second vault's files with
+/// the main vault's index (or the reverse) and writes into the wrong one (card 29).
+fn pairing_error(vault_dir_from_env: bool, db_from_env: bool) -> Option<&'static str> {
+    (vault_dir_from_env != db_from_env).then_some(
+        "set both CONTEXT_VAULT_VAULT_DIR and CONTEXT_VAULT_DB_PATH, or neither: \
+         with only one set, the other falls back to the main vault",
+    )
+}
+
+fn check_pairing() -> Result<()> {
+    match pairing_error(env_vault_dir().is_some(), env_db_path().is_some()) {
+        Some(msg) => anyhow::bail!(msg),
+        None => Ok(()),
+    }
+}
+
 /// Resolve the vault.db path: CONTEXT_VAULT_DB_PATH / CONTEXT_MCP_DB_PATH env vars win
 /// over `config.json`'s `dbPath`, which wins over the `~/.context-mcp/vault.db` default.
 /// Ensures the parent directory exists regardless of which tier resolved the path.
 pub fn resolve_db_path() -> Result<String> {
+    check_pairing()?;
     let home = std::env::var("HOME").context("HOME not set")?;
 
-    let path = if let Ok(p) =
-        std::env::var("CONTEXT_VAULT_DB_PATH").or_else(|_| std::env::var("CONTEXT_MCP_DB_PATH"))
-    {
+    let path = if let Some(p) = env_db_path() {
         p
     } else if let Some(p) =
         read_config_json(&home).and_then(|c| c.get("dbPath")?.as_str().map(String::from))
@@ -55,11 +78,10 @@ pub fn resolve_db_path() -> Result<String> {
 /// the `~/.vault` default. Ensures the directory exists regardless of which tier
 /// resolved it.
 pub fn resolve_vault_dir() -> Result<String> {
+    check_pairing()?;
     let home = std::env::var("HOME").context("HOME not set")?;
 
-    let path = if let Ok(p) = std::env::var("CONTEXT_VAULT_VAULT_DIR")
-        .or_else(|_| std::env::var("CONTEXT_MCP_VAULT_DIR"))
-    {
+    let path = if let Some(p) = env_vault_dir() {
         p
     } else if let Some(p) =
         read_config_json(&home).and_then(|c| c.get("vaultDir")?.as_str().map(String::from))
@@ -103,4 +125,17 @@ pub fn resolve_model_cache_dir() -> Result<String> {
 
     std::fs::create_dir_all(&path)?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod pairing_tests {
+    use super::pairing_error;
+
+    #[test]
+    fn refuses_only_one_of_vault_dir_and_db_from_env() {
+        assert!(pairing_error(true, false).is_some(), "vault dir alone would index into the main vault.db");
+        assert!(pairing_error(false, true).is_some(), "db alone would read the main vault's files");
+        assert!(pairing_error(true, true).is_none());
+        assert!(pairing_error(false, false).is_none(), "config.json / defaults are untouched");
+    }
 }

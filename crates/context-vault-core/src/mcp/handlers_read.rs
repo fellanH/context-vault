@@ -13,16 +13,26 @@ pub async fn handle_get_context(
     args: &Value,
 ) -> Result<String, String> {
     let query = args.get("query").and_then(|v| v.as_str());
-    let limit = args
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(10) as usize;
+    let str_arg = |k: &str| args.get(k).and_then(|v| v.as_str()).map(|s| s.to_string());
+    let uint_arg = |k: &str| args.get(k).and_then(|v| v.as_u64()).map(|n| n as usize);
+    let tags = args.get("tags").and_then(|v| v.as_array()).map(|arr| {
+        arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect::<Vec<_>>()
+    });
 
     let opts = crate::engine::SearchOptions {
-        limit,
+        kind: str_arg("kind"),
+        category: str_arg("category"),
+        tags: tags.filter(|t| !t.is_empty()),
+        since: str_arg("since"),
+        until: str_arg("until"),
+        include_superseded: args.get("include_superseded").and_then(|v| v.as_bool()).unwrap_or(false),
+        limit: uint_arg("limit").unwrap_or(10),
         offset: 0,
         ..Default::default()
     };
+    let body_limit = uint_arg("body_limit");
+    // Rough budget: ~4 characters per token.
+    let max_chars = uint_arg("max_tokens").map(|t| t.saturating_mul(4));
 
     let results = engine
         .hybrid_search(query.unwrap_or(""), opts)
@@ -34,20 +44,30 @@ pub async fn handle_get_context(
             query.map(|q| format!(" for \"{q}\"")).unwrap_or_default()));
     }
 
-    let mut lines = vec![format!("## Results ({} matches)\n", results.len())];
-    for r in results {
+    let total = results.len();
+    let mut out = format!("## Results ({} matches)\n", total);
+    for (shown, r) in results.into_iter().enumerate() {
         let e = &r.entry;
         let title = e.title.as_deref().unwrap_or("(untitled)");
-        lines.push(format!(
-            "- **{}** (score: {:.2}) [{}/{}] id: `{}`",
+        let mut item = format!(
+            "\n- **{}** (score: {:.2}) [{}/{}] id: `{}`",
             title, r.score, e.kind, e.tier, e.id
-        ));
-        if let Some(body) = &e.body.lines().next() {
-            lines.push(format!("  {}", body));
+        );
+        if let Some(body) = e.body.lines().next() {
+            let body: String = match body_limit {
+                Some(n) => body.chars().take(n).collect(),
+                None => body.to_string(),
+            };
+            item.push_str(&format!("\n  {}", body));
         }
+        if max_chars.is_some_and(|max| shown > 0 && out.len() + item.len() > max) {
+            out.push_str(&format!("\n\n({} more not shown: max_tokens reached)", total - shown));
+            break;
+        }
+        out.push_str(&item);
     }
 
-    Ok(lines.join("\n"))
+    Ok(out)
 }
 
 /// Implements list_context: list entries without search scoring.
@@ -61,9 +81,11 @@ pub async fn handle_list_context(
         .and_then(|v| v.as_u64())
         .unwrap_or(10) as usize;
     let kind = args.get("kind").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let category = args.get("category").and_then(|v| v.as_str()).map(|s| s.to_string());
 
     let opts = crate::engine::ListOptions {
         kind,
+        category,
         limit,
         offset: 0,
         ..Default::default()

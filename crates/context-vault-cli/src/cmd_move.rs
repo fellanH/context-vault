@@ -41,7 +41,7 @@ pub async fn run_move(source: String, dest: String, dry_run: bool) -> Result<()>
 /// never re-reads or re-parses a markdown file, so it stays fast regardless of how
 /// many entries the vault holds overall.
 async fn sync_moved_paths(moved: &[(String, String)]) -> Result<usize> {
-    let engine = engine_cmd::build_engine().await?;
+    let engine = engine_cmd::build_sqlite().await?;
     let db = engine.raw_db();
     let mut conn = db.lock().unwrap();
     let tx = conn.transaction()?;

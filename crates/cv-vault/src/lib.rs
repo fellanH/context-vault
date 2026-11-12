@@ -12,6 +12,9 @@ pub mod fm_parse;
 pub mod md_extract;
 pub mod formatters;
 pub mod files;
+pub mod collectors;
+pub mod export;
+pub mod stale;
 pub mod entry_file;
 pub mod capture;
 
@@ -24,5 +27,5 @@ pub use fm_parse::{parse_frontmatter, extract_custom_meta};
 pub use md_extract::parse_entry_from_markdown;
 pub use formatters::format_body;
 pub use files::{slugify, safe_join, walk_dir, WalkResult};
-pub use entry_file::write_entry_file;
-pub use capture::{write_entry, WriteResult};
+pub use entry_file::{write_entry_file, write_entry_file_at};
+pub use capture::{rewrite_entry, write_entry, WriteResult};

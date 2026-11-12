@@ -89,4 +89,50 @@ CREATE TABLE IF NOT EXISTS index_state (
   value TEXT NOT NULL
 );
 
+-- Situations: entries carry `situations` (array) and `situation_order` in meta (so they live in the
+-- markdown frontmatter and survive a reindex). This index is kept by triggers; it is additive and
+-- needs no backfill (no earlier entry has situations). The LIKE guards keep every other write free.
+CREATE TABLE IF NOT EXISTS vault_situations (
+    situation TEXT NOT NULL,
+    entry_id  TEXT NOT NULL,
+    ord       INTEGER NOT NULL DEFAULT 100,
+    updated   TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (situation, entry_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_vault_situations_entry ON vault_situations(entry_id);
+CREATE INDEX IF NOT EXISTS idx_vault_situations_order ON vault_situations(situation, ord, updated DESC, entry_id);
+
+-- Only a well-formed `situations` array of kebab-case names is indexed; anything else is ignored (the entry
+-- stays editable, it just is not in a situation). json_valid/json_type sit in a CASE so they never see bad JSON.
+CREATE TRIGGER IF NOT EXISTS vault_situations_ai AFTER INSERT ON vault
+WHEN new.meta LIKE '%"situations"%' BEGIN
+    INSERT OR REPLACE INTO vault_situations(situation, entry_id, ord, updated)
+      SELECT j.value, new.id, COALESCE(CAST(json_extract(new.meta, '$.situation_order') AS INTEGER), 100),
+             COALESCE(new.updated_at, new.created_at, '')
+        FROM json_each(CASE WHEN json_valid(new.meta) AND json_type(new.meta, '$.situations') = 'array' THEN new.meta ELSE '{}' END, '$.situations') j
+       WHERE j.type = 'text' AND length(j.value) BETWEEN 1 AND 32 AND j.value NOT GLOB '*[^a-z0-9-]*' AND j.value NOT GLOB '-*' AND j.value NOT GLOB '*-' AND j.value NOT GLOB '*--*';
+END;
+CREATE TRIGGER IF NOT EXISTS vault_situations_au AFTER UPDATE OF meta, updated_at ON vault
+WHEN old.meta LIKE '%"situations"%' OR new.meta LIKE '%"situations"%' BEGIN
+    DELETE FROM vault_situations WHERE entry_id = old.id;
+    INSERT OR REPLACE INTO vault_situations(situation, entry_id, ord, updated)
+      SELECT j.value, new.id, COALESCE(CAST(json_extract(new.meta, '$.situation_order') AS INTEGER), 100),
+             COALESCE(new.updated_at, new.created_at, '')
+        FROM json_each(CASE WHEN json_valid(new.meta) AND json_type(new.meta, '$.situations') = 'array' THEN new.meta ELSE '{}' END, '$.situations') j
+       WHERE j.type = 'text' AND length(j.value) BETWEEN 1 AND 32 AND j.value NOT GLOB '*[^a-z0-9-]*' AND j.value NOT GLOB '-*' AND j.value NOT GLOB '*-' AND j.value NOT GLOB '*--*';
+END;
+CREATE TRIGGER IF NOT EXISTS vault_situations_ad AFTER DELETE ON vault
+WHEN old.meta LIKE '%"situations"%' BEGIN
+    DELETE FROM vault_situations WHERE entry_id = old.id;
+END;
+
+-- The cached vault map (one row): regenerated when older than 24 h or the entry count moved.
+CREATE TABLE IF NOT EXISTS vault_map (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    map_json     TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    entries_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vault_kind_cat_created ON vault(kind, category, created_at DESC);
+
 PRAGMA user_version = 20;

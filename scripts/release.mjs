@@ -13,13 +13,16 @@
 import { readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import { tmpdir } from 'os';
+import { bumpNativeVersion, NATIVE_VERSION_FILES } from './release-version.mjs';
+import { validateReleaseTarget } from './release-preflight.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
 
 const PACKAGE_FILES = ['package.json', 'packages/local/package.json'];
+const VERSION_FILES = [...PACKAGE_FILES, ...NATIVE_VERSION_FILES];
 
 // --- Helpers ---
 
@@ -65,6 +68,25 @@ if (!arg) {
   process.exit(1);
 }
 
+// Refuse destination drift before version edits, tags, or publishing.
+let releaseSource;
+try {
+  releaseSource = validateReleaseTarget({
+    manifest: readFileSync(resolve(root, 'domain.toml'), 'utf8'),
+    installSh: readFileSync(resolve(root, 'install.sh'), 'utf8'),
+    installPs1: readFileSync(resolve(root, 'install.ps1'), 'utf8'),
+    origin: run('git remote get-url origin'),
+    mirrorPublisherConfigured: true,
+  });
+} catch (error) {
+  console.error(`Release preflight refused: ${error.message}`);
+  process.exit(1);
+}
+if (arg === '--check') {
+  console.log('Release destinations match. No changes made.');
+  process.exit(0);
+}
+
 const dirty = run('git status --porcelain');
 if (dirty) {
   console.error('Working tree is dirty. Commit or stash changes first.\n');
@@ -74,15 +96,12 @@ if (dirty) {
 
 const branch = run('git rev-parse --abbrev-ref HEAD');
 if (branch !== 'main') {
-  console.error(`On branch "${branch}" — releases should be from main.`);
-}
-
-try {
-  run('npm whoami');
-} catch {
-  console.error('Not logged in to npm. Run: npm login');
+  console.error(`On branch "${branch}" — releases must be from main.`);
   process.exit(1);
 }
+
+// Gate the export before any release mutation. No public push occurs here.
+execFileSync('scaffold', ['publish', root, '--rev', 'HEAD', '--dry-run'], { cwd: root, stdio: 'inherit' });
 
 // --- Bump versions ---
 
@@ -111,6 +130,8 @@ for (const file of PACKAGE_FILES) {
   console.log(`  bumped ${file}`);
 }
 
+bumpNativeVersion(root, newVersion);
+
 // --- Verify CHANGELOG ---
 
 const changelog = readFileSync(resolve(root, 'CHANGELOG.md'), 'utf8');
@@ -118,7 +139,7 @@ if (!changelog.includes(`## [${newVersion}]`)) {
   console.error(`\n  CHANGELOG.md has no entry for [${newVersion}].`);
   console.error(`  Add a "## [${newVersion}]" section before releasing.\n`);
   // Revert bumped files
-  run('git checkout -- ' + PACKAGE_FILES.join(' '));
+  run('git checkout -- ' + VERSION_FILES.join(' '));
   console.error('  Reverted version bumps.');
   process.exit(1);
 }
@@ -126,13 +147,13 @@ if (!changelog.includes(`## [${newVersion}]`)) {
 // --- Run tests (Rust engine is the source of truth post-migration) ---
 
 console.log('\n  running cargo test...');
-run('cargo test --workspace');
+run('cargo test --workspace --locked');
 console.log('  tests passed\n');
 
 // --- Build the native engine (sanity; CI cross-compiles per-platform) ---
 
 console.log('  building release binary...');
-run('cargo build --release -p context-vault-cli');
+run('cargo build --release -p context-vault-cli --locked');
 console.log('  build passed\n');
 
 // --- Commit, tag, push ---
@@ -142,7 +163,7 @@ console.log('  build passed\n');
 // publishes the @context-vault/cli-<triple> platform packages, then publishes the
 // main `context-vault` package. See project-management/docs/rust-cutover-runbook.md.
 
-run(`git add ${PACKAGE_FILES.join(' ')} CHANGELOG.md`);
+run(`git add ${VERSION_FILES.join(' ')} CHANGELOG.md`);
 run(`git commit -m "v${newVersion}"`);
 run(`git tag v${newVersion}`);
 
@@ -157,14 +178,21 @@ const notes = extractChangelogEntry(changelog, newVersion);
 const notesFile = join(tmpdir(), `cv-release-notes-${newVersion}.md`);
 writeFileSync(notesFile, notes);
 try {
-  run(
-    `gh release create v${newVersion} --title "v${newVersion}" --notes-file "${notesFile}" --latest`
-  );
-  console.log(`  created GitHub release v${newVersion}\n`);
-} catch (e) {
-  console.error(`  GitHub release failed (non-blocking): ${e.message}\n`);
+  try {
+    execFileSync('gh', ['release', 'create', `v${newVersion}`, '-R', releaseSource,
+      '--title', `v${newVersion}`, '--notes-file', notesFile, '--latest'], { cwd: root, stdio: 'inherit' });
+  } catch {
+    // CI can win the race and create the release first; update its notes in that case.
+    execFileSync('gh', ['release', 'edit', `v${newVersion}`, '-R', releaseSource,
+      '--title', `v${newVersion}`, '--notes-file', notesFile], { cwd: root, stdio: 'inherit' });
+  }
 } finally {
   unlinkSync(notesFile);
 }
+
+// Wait for CI, gate the public export, then copy checksum-verified assets.
+// On failure the private tag remains; retry this idempotent completion command.
+console.log(`  Completing public release; retry if needed: node scripts/publish-release.mjs ${newVersion} --apply`);
+execFileSync(process.execPath, ['scripts/publish-release.mjs', newVersion, '--apply'], { cwd: root, stdio: 'inherit' });
 
 console.log(`  done.\n`);

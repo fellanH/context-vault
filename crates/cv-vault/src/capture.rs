@@ -8,7 +8,7 @@ use ulid::Ulid;
 use cv_engine::SaveInput;
 use crate::{
     fm_parse::parse_frontmatter,
-    entry_file::write_entry_file,
+    entry_file::{write_entry_file, write_entry_file_at},
     schema_check::check_save,
     taxonomy::VaultTaxonomy,
 };
@@ -117,42 +117,61 @@ fn resolve_write_fields(
     Ok(ResolvedWriteFields { id, created_at, updated_at, category, tier })
 }
 
-pub fn write_entry(vault_dir: &str, input: &SaveInput) -> Result<WriteResult> {
+fn check_input(input: &SaveInput) -> Result<()> {
     if input.kind.is_empty() {
         return Err(anyhow!("writeEntry: kind is required (non-empty string)"));
     }
     if input.body.trim().is_empty() {
         return Err(anyhow!("writeEntry: body is required (non-empty string)"));
     }
+    Ok(())
+}
+
+fn write_params(input: &SaveInput, f: &ResolvedWriteFields) -> WriteEntryParams {
+    WriteEntryParams {
+        id: f.id.clone(),
+        title: input.title.clone(),
+        body: input.body.clone(),
+        meta: Some(input.meta.as_ref().and_then(|v| v.as_object().cloned())),
+        tags: input.tags.clone(),
+        source: input.source.clone(),
+        created_at: f.created_at.clone(),
+        updated_at: f.updated_at.clone(),
+        folder: None,
+        category: f.category.clone(),
+        identity_key: input.identity_key.clone(),
+        expires_at: input.expires_at.clone(),
+        supersedes: input.supersedes.clone(),
+        related_to: input.related_to.clone(),
+        tier: Some(f.tier.clone()),
+    }
+}
+
+/// Rewrites an existing entry in place: same id, created time and file path.
+pub fn rewrite_entry(vault_dir: &str, input: &SaveInput, id: &str, created_at: &str, file_path: &str) -> Result<WriteResult> {
+    check_input(input)?;
+    let taxonomy = VaultTaxonomy::load_strict(vault_dir)?;
+    check_save(&taxonomy, input)?;
+    let fields = ResolvedWriteFields {
+        id: id.to_string(),
+        created_at: created_at.to_string(),
+        updated_at: Utc::now().to_rfc3339(),
+        category: taxonomy.category_for(&input.kind).to_string(),
+        tier: input.tier.clone().unwrap_or_else(|| taxonomy.tier_for(&input.kind).to_string()),
+    };
+    let file_path = write_entry_file_at(file_path, &input.kind, write_params(input, &fields))?;
+    let ResolvedWriteFields { id, created_at, updated_at, category, tier } = fields;
+    Ok(WriteResult { id, file_path, created_at, updated_at, category, tier })
+}
+
+pub fn write_entry(vault_dir: &str, input: &SaveInput) -> Result<WriteResult> {
+    check_input(input)?;
 
     let taxonomy = VaultTaxonomy::load_strict(vault_dir)?;
     check_save(&taxonomy, input)?;
-    let ResolvedWriteFields { id, created_at, updated_at, category, tier } =
-        resolve_write_fields(vault_dir, &taxonomy, input)?;
-
-    let meta_map = input.meta.as_ref().and_then(|v| v.as_object().cloned());
-    let file_path = write_entry_file(
-        vault_dir,
-        &input.kind,
-        &taxonomy,
-        WriteEntryParams {
-            id: id.clone(),
-            title: input.title.clone(),
-            body: input.body.clone(),
-            meta: Some(meta_map),
-            tags: input.tags.clone(),
-            source: input.source.clone(),
-            created_at: created_at.clone(),
-            updated_at: updated_at.clone(),
-            folder: None,
-            category: category.clone(),
-            identity_key: input.identity_key.clone(),
-            expires_at: input.expires_at.clone(),
-            supersedes: input.supersedes.clone(),
-            related_to: input.related_to.clone(),
-            tier: Some(tier.clone()),
-        },
-    )?;
+    let fields = resolve_write_fields(vault_dir, &taxonomy, input)?;
+    let file_path = write_entry_file(vault_dir, &input.kind, &taxonomy, write_params(input, &fields))?;
+    let ResolvedWriteFields { id, created_at, updated_at, category, tier } = fields;
 
     Ok(WriteResult {
         id,
@@ -162,15 +181,6 @@ pub fn write_entry(vault_dir: &str, input: &SaveInput) -> Result<WriteResult> {
         category,
         tier,
     })
-}
-
-pub fn update_entry_file(
-    _vault_dir: &str,
-    _existing: &Map<String, Value>,
-    _updates: &Map<String, Value>,
-) -> Result<()> {
-    // Phase 2+ implementation
-    Ok(())
 }
 
 #[cfg(test)]

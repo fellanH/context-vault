@@ -6,11 +6,11 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use context_vault_core::backends::SqliteBackend;
 use cv_ingest::ingest::{build_signals, extract_insights, normalize_turns, parse_turns, HookInput, SessionSignals};
 
 use crate::cmd_session_end::{save_new_insights, save_session_entry};
 use crate::engine_cmd;
+use context_vault_core::engine::VaultEngine;
 use crate::session_repo_log;
 
 const INSIGHT_PATTERNS: &[&str] = &["★ Insight"];
@@ -28,7 +28,7 @@ pub async fn run_backfill(transcripts_dir: &str, cwd_root: &str) -> Result<()> {
         if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
             continue;
         }
-        record_outcome(&mut counts, backfill_one(&engine, &path, cwd_root).await, &path);
+        record_outcome(&mut counts, backfill_one(engine.as_ref(), &path, cwd_root).await, &path);
     }
     println!("backfill {cwd_root}: {} written, {} skipped, {} failed", counts.0, counts.1, counts.2);
     Ok(())
@@ -47,7 +47,7 @@ fn record_outcome(counts: &mut (usize, usize, usize), result: Result<bool>, path
 
 /// `Ok(true)` if a log was written, `Ok(false)` if the session had no user
 /// turns or was already backfilled.
-async fn backfill_one(engine: &SqliteBackend, path: &Path, cwd_root: &str) -> Result<bool> {
+async fn backfill_one(engine: &dyn VaultEngine, path: &Path, cwd_root: &str) -> Result<bool> {
     let session_id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown-session").to_string();
     let raw = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let turns = normalize_turns(parse_turns(&raw));

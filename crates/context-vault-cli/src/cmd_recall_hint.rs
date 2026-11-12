@@ -24,16 +24,19 @@ const MIN_PROMPT_CHARS: usize = 10;
 
 pub async fn run_recall_hint() {
     match try_recall().await {
-        Ok(Some(hints)) => emit_additional_context(&hints),
+        Ok(Some((event, hints))) => emit_additional_context(&event, &hints),
         Ok(None) => {}
         Err(e) => eprintln!("[context-vault] recall-hint: {e:#}"),
     }
 }
 
-async fn try_recall() -> Result<Option<String>> {
+async fn try_recall() -> Result<Option<(String, String)>> {
     let mut raw = String::new();
     std::io::stdin().read_to_string(&mut raw).context("reading stdin hook payload")?;
     let v: Value = serde_json::from_str(raw.trim()).context("parsing hook payload JSON")?;
+    if v.get("hook_event_name").and_then(|e| e.as_str()) == Some("SessionStart") {
+        return crate::cmd_recall_situation::session_start_context(&v).await;
+    }
     let prompt = v.get("prompt").and_then(|p| p.as_str()).unwrap_or("").trim().to_string();
 
     if !worth_recalling(&prompt) {
@@ -51,12 +54,12 @@ async fn try_recall() -> Result<Option<String>> {
         .and_then(project_from_cwd);
 
     let engine: Arc<dyn VaultEngine> =
-        Arc::new(engine_cmd::build_engine().await.context("building vault engine")?);
+        engine_cmd::build_engine().await.context("building vault engine")?;
     let hints = context_vault_core::mcp::recall(engine, &prompt, scope.as_deref(), MAX_HINTS)
         .await
         .map_err(|e| anyhow::anyhow!(e))
         .context("running recall")?;
-    Ok(useful_hints(&hints))
+    Ok(useful_hints(&hints).map(|h| ("UserPromptSubmit".to_string(), h)))
 }
 
 /// Last path component of the session cwd, the vault's project/bucket name
@@ -86,10 +89,10 @@ fn useful_hints(hints: &str) -> Option<String> {
     }
 }
 
-fn emit_additional_context(hints: &str) {
+fn emit_additional_context(event: &str, hints: &str) {
     let payload = serde_json::json!({
         "hookSpecificOutput": {
-            "hookEventName": "UserPromptSubmit",
+            "hookEventName": event,
             "additionalContext": hints,
         }
     });

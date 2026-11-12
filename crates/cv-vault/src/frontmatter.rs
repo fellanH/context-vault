@@ -47,7 +47,7 @@ fn format_fm_value(value: &Value) -> String {
 }
 
 fn needs_quoting(s: &str) -> bool {
-    s.chars().any(|c| {
+    s.is_empty() || s.trim() != s || serde_json::from_str::<Value>(s).is_ok() || s.chars().any(|c| {
         matches!(
             c,
             ':' | '#' | '\'' | '"' | '{' | '}' | '[' | ']' | ',' | '>' | '|' | '&' | '*' | '?'

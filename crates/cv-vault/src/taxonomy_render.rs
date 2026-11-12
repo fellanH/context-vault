@@ -21,7 +21,9 @@ impl VaultTaxonomy {
         out.push_str("[default]\n");
         out.push_str(&format!("category = \"{}\"\n", self.default.category));
         out.push_str(&format!("tier = \"{}\"\n", self.default.tier));
-        out.push_str(&format!("identity = {}\n\n", self.default.identity));
+        out.push_str(&format!("identity = {}\n", self.default.identity));
+        push_fresh_days(&mut out, self.default.fresh_days);
+        out.push('\n');
         push_fields(&mut out, "default", &self.default.fields);
 
         for (kind, rule) in &self.kinds {
@@ -34,6 +36,7 @@ impl VaultTaxonomy {
             if let Some(folder) = &rule.folder {
                 out.push_str(&format!("folder = \"{}\"\n", folder));
             }
+            push_fresh_days(&mut out, rule.fresh_days);
             out.push('\n');
             if rule.fields != self.default.fields {
                 push_fields(&mut out, &format!("kinds.{}", kind), &rule.fields);
@@ -41,6 +44,12 @@ impl VaultTaxonomy {
         }
 
         out
+    }
+}
+
+fn push_fresh_days(out: &mut String, days: Option<u32>) {
+    if let Some(days) = days {
+        out.push_str(&format!("fresh_days = {}\n", days));
     }
 }
 

@@ -16,7 +16,7 @@
 use anyhow::Result;
 use chrono::Utc;
 use cv_engine::ReindexSummary;
-use cv_vault::{parse_frontmatter, walk_dir, VaultTaxonomy, WalkResult};
+use cv_vault::{extract_custom_meta, parse_frontmatter, walk_dir, VaultTaxonomy, WalkResult};
 use rusqlite::{named_params, params, Connection, Transaction};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -44,6 +44,7 @@ struct FileRow {
     title: Option<String>,
     body: String,
     tags: Option<String>,
+    meta: Option<String>,
     source: Option<String>,
     identity_key: Option<String>,
     tier: String,
@@ -143,6 +144,7 @@ fn build_row(
         title: get_str("title"),
         body,
         tags: fm.get("tags").map(|v| v.to_string()),
+        meta: extract_custom_meta(fm).map(|m| serde_json::Value::Object(m).to_string()),
         source: get_str("source"),
         identity_key: get_str("identity_key"),
         tier,
@@ -194,16 +196,16 @@ fn upsert_row(tx: &Transaction, row: &FileRow, file_path: &str) -> Result<()> {
 
 fn insert_row(tx: &Transaction, row: &FileRow, file_path: &str) -> rusqlite::Result<usize> {
     tx.execute(
-        "INSERT INTO vault (id, kind, category, title, body, tags, source, file_path, identity_key, tier, heat_tier, indexed, created_at, updated_at, expires_at) \
-         VALUES (:id, :kind, :category, :title, :body, :tags, :source, :file_path, :identity_key, :tier, :heat_tier, :indexed, :created_at, :updated_at, :expires_at) \
+        "INSERT INTO vault (id, kind, category, title, body, tags, meta, source, file_path, identity_key, tier, heat_tier, indexed, created_at, updated_at, expires_at) \
+         VALUES (:id, :kind, :category, :title, :body, :tags, :meta, :source, :file_path, :identity_key, :tier, :heat_tier, :indexed, :created_at, :updated_at, :expires_at) \
          ON CONFLICT(id) DO UPDATE SET \
            kind=excluded.kind, category=excluded.category, title=excluded.title, \
-           body=excluded.body, tags=excluded.tags, source=excluded.source, \
+           body=excluded.body, tags=excluded.tags, meta=excluded.meta, source=excluded.source, \
            file_path=excluded.file_path, tier=excluded.tier, heat_tier=excluded.heat_tier, \
            updated_at=excluded.updated_at, expires_at=excluded.expires_at",
         named_params! {
             ":id": row.id, ":kind": row.kind, ":category": row.category, ":title": row.title,
-            ":body": row.body, ":tags": row.tags, ":source": row.source, ":file_path": file_path,
+            ":body": row.body, ":tags": row.tags, ":meta": row.meta, ":source": row.source, ":file_path": file_path,
             ":identity_key": row.identity_key, ":tier": row.tier, ":heat_tier": row.heat_tier,
             ":indexed": 1, ":created_at": row.created, ":updated_at": row.updated, ":expires_at": row.expires_at
         },
@@ -212,13 +214,13 @@ fn insert_row(tx: &Transaction, row: &FileRow, file_path: &str) -> rusqlite::Res
 
 fn update_row_by_file_path(tx: &Transaction, row: &FileRow, file_path: &str) -> rusqlite::Result<usize> {
     tx.execute(
-        "UPDATE vault SET kind=:kind, category=:category, title=:title, body=:body, tags=:tags, \
+        "UPDATE vault SET kind=:kind, category=:category, title=:title, body=:body, tags=:tags, meta=:meta, \
          source=:source, identity_key=:identity_key, tier=:tier, heat_tier=:heat_tier, \
          updated_at=:updated_at, expires_at=:expires_at \
          WHERE file_path=:file_path",
         named_params! {
             ":kind": row.kind, ":category": row.category, ":title": row.title, ":body": row.body,
-            ":tags": row.tags, ":source": row.source, ":identity_key": row.identity_key,
+            ":tags": row.tags, ":meta": row.meta, ":source": row.source, ":identity_key": row.identity_key,
             ":tier": row.tier, ":heat_tier": row.heat_tier, ":updated_at": row.updated,
             ":expires_at": row.expires_at, ":file_path": file_path
         },

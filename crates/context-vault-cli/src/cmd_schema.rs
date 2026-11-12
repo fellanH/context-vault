@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use context_vault_core::engine::{ReindexOptions, VaultEngine};
+use context_vault_core::engine::ReindexOptions;
 use context_vault_core::paths::resolve_vault_dir;
 use cv_vault::VaultTaxonomy;
 

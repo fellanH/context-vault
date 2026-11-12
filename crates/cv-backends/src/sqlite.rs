@@ -76,7 +76,7 @@ impl VaultEngine for SqliteBackend {
         // Local-first: write the markdown file first (source of truth), then index it
         // into SQLite. On DB failure, roll the file back so disk and DB stay consistent.
         let vault_dir = self.vault_dir.to_string_lossy().to_string();
-        let wr = cv_vault::write_entry(&vault_dir, &input)?;
+        let (wr, previous) = super::sqlite_write::write_markdown(self, &vault_dir, &input).await?;
 
         let text = match &input.title {
             Some(t) if !t.is_empty() => format!("{}\n{}", t, input.body),
@@ -88,7 +88,7 @@ impl VaultEngine for SqliteBackend {
             Ok(out) => Ok(out),
             Err(e) => {
                 // Best-effort rollback of the just-written file (mirrors TS captureAndIndex).
-                let _ = std::fs::remove_file(&wr.file_path);
+                let _ = super::sqlite_write::restore_file(&wr.file_path, previous);
                 Err(e)
             }
         }

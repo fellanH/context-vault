@@ -16,6 +16,8 @@ dev-tools = []
 
 [dependencies]
 context-vault-core.workspace = true
+cv-index.workspace = true
+cv-core.workspace = true
 cv-lifecycle.workspace = true
 cv-vault.workspace = true
 cv-ingest.workspace = true

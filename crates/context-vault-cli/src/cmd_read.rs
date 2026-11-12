@@ -93,7 +93,7 @@ pub async fn run_recall(
                 .and_then(|d| crate::cmd_recall_hint::project_from_cwd(&d.to_string_lossy()))
         })
     };
-    let engine: Arc<dyn VaultEngine> = Arc::new(engine_cmd::build_engine().await?);
+    let engine: Arc<dyn VaultEngine> = engine_cmd::build_engine().await?;
     match context_vault_core::mcp::recall(engine, signal, scope.as_deref(), limit.unwrap_or(3)).await
     {
         Ok(hints) => println!("{hints}"),

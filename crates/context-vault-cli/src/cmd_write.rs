@@ -1,7 +1,6 @@
 //! Write commands: delete.
 
 use anyhow::Result;
-use context_vault_core::engine::VaultEngine;
 
 use crate::engine_cmd;
 

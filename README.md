@@ -1,157 +1,122 @@
 # context-vault
 
-[![npm version](https://img.shields.io/npm/v/context-vault)](https://www.npmjs.com/package/context-vault)
-[![license](https://img.shields.io/npm/l/context-vault)](./LICENSE)
-[![node](https://img.shields.io/node/v/context-vault)](https://nodejs.org)
+[![release](https://img.shields.io/github/v/release/fellanH/context-vault)](https://github.com/fellanH/context-vault/releases/latest)
+[![license](https://img.shields.io/github/license/fellanH/context-vault)](./LICENSE)
 
-Persistent memory for AI agents — save and search knowledge across sessions. Data stays local as markdown files.
+Persistent memory for AI agents: your agent saves what it learns and finds it again in the next session. Entries are plain markdown files on your machine.
 
-> **Hosted tier** — cloud sync, web dashboard, team sharing → [app.context-vault.com](https://app.context-vault.com)
+> **Hosted tier**: cloud sync, web dashboard, team sharing at [app.context-vault.com](https://app.context-vault.com)
 
 <p align="center">
   <img src="assets/vault-brain.png" alt="Vault Brain — 3D knowledge graph visualization showing nodes, edges, and hub detection" width="800">
 </p>
-<p align="center"><em>Vault Brain — your knowledge as a living neural network</em></p>
 
-## Quick Start
+## Quick start: a memory recalled in a new session, in under 5 minutes
+
+Timed on a clean macOS account with Claude Code: about one minute of commands, plus your typing.
+
+**1. Install the binary** (macOS and Linux; no Node needed):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/fellanH/context-vault/main/install.sh | sh
+curl -fsSL https://context-vault.com/install.sh | bash
+```
+
+It puts `context-vault` in `~/.local/bin`. If it says that folder is not on your PATH, run the line it prints, then open a new terminal.
+
+**2. Connect your AI tools:**
+
+```bash
 context-vault setup
 ```
 
-No Node required — this installs the native binary directly. Windows: `irm https://raw.githubusercontent.com/fellanH/context-vault/main/install.ps1 | iex`.
+This adds Context Vault to the MCP config of Claude Code and every other client it finds (Claude Desktop, Cursor, Windsurf, Cline, Roo Code). `--client claude-code` limits it to one; `--dry-run` shows what it would write.
 
-Already have Node? `npx context-vault` works too and runs the same native engine under the hood.
+**3. Restart your AI tool.** Quit it and start it again (for Claude Code, a new `claude` in a new terminal). The first start downloads the search model (about 90 MB) once.
 
-Setup (~2 min) detects your AI tools (Claude Code, Cursor, Codex, Windsurf, etc.), configures MCP, downloads the embedding model (~22MB), and seeds a starter entry. The server runs as a shared daemon — all AI sessions share one auto-updating process.
+**4. Save something.** Name the vault, or Claude Code may keep it in its own built-in memory instead:
 
-Then **restart your AI tool** (required to pick up the new MCP server) and try:
+> Save to my vault: our staging bucket is called aurora-gravel-17
 
-> **"Search my vault for getting started"**
+**5. Recall it in a new session.** Quit, start a fresh session, and ask:
 
-The vault lives at `~/vault/` — plain markdown files you own.
+> Search my vault: what is our staging bucket called?
 
-## What It Does
+The answer comes from the vault, and the entry is a markdown file under `~/.vault/` that you can open and edit. `context-vault doctor` should print `engine health: OK`.
 
-- **Save** — Insights, decisions, patterns, contacts. Your AI agent writes them as you work.
-- **Search** — Hybrid full-text + semantic search. Ask in natural language.
-- **Own your data** — Markdown in folders you control. Git-versioned, human-editable.
+Windows: `irm https://context-vault.com/install.ps1 | iex`, open a new terminal, then steps 2 to 5.
 
-## First Steps
+## What it does
 
-| Tell your AI                                             | What happens                             |
-| -------------------------------------------------------- | ---------------------------------------- |
-| "Save an insight: React Query's staleTime defaults to 0" | Creates `~/vault/knowledge/insights/...` |
-| "Search my vault for React Query"                        | Returns matching entries                 |
-| "List my recent decisions"                               | Browses entries by kind                  |
-| "Show my vault status"                                   | Diagnostics and health                   |
+- **Save**: insights, decisions, patterns, references. Your agent writes them as you work.
+- **Search**: hybrid full-text and semantic search, in natural language.
+- **Own your data**: markdown in a folder you control, git-friendly and human-editable.
 
-## MCP Tools
+## MCP tools
 
-Your AI agent uses these automatically — you don't call them directly.
+Your agent calls these; you talk to it in plain words.
 
-**Core**
+| Tool              | What it does                                                    |
+| ----------------- | --------------------------------------------------------------- |
+| `save_context`    | Save an entry, or update one by id                              |
+| `get_context`     | Search the vault (full-text and semantic)                       |
+| `recall`          | Light hints from a raw signal: a prompt, an error, a file path  |
+| `list_context`    | Browse entries by kind, tags or date                            |
+| `delete_context`  | Remove an entry by id                                           |
+| `ingest_url`      | Fetch a page and save its readable text                         |
+| `ingest_project`  | Scan a local project and register it                            |
+| `create_snapshot` | Compile entries on a topic into one brief                       |
+| `session_end`     | Save a session summary and its discoveries                      |
+| `context_status`  | Vault health: paths, counts, issues                             |
+| `list_buckets`    | List buckets (a `bucket:<name>` tag scopes entries)             |
 
-| Tool             | Description                                               |
-| ---------------- | --------------------------------------------------------- |
-| `get_context`    | Search vault — hybrid full-text + semantic vector search  |
-| `save_context`   | Save or update entries (insights, decisions, patterns...) |
-| `list_context`   | Browse entries with filters (kind, tags, date range)      |
-| `delete_context` | Remove an entry by ID                                     |
+Kinds (`insight`, `decision`, `pattern`, `reference`, or your own) are folders in the vault.
 
-**Ingest**
+## CLI
 
-| Tool             | Description                                                             |
-| ---------------- | ----------------------------------------------------------------------- |
-| `ingest_url`     | Fetch a URL, extract readable content, save as a vault entry            |
-| `ingest_project` | Scan a local project directory (package.json, README, git, tech stack) |
-
-**Session**
-
-| Tool              | Description                                                                          |
-| ----------------- | ------------------------------------------------------------------------------------ |
-| `session_end`     | Capture a session summary + discoveries as vault entries                             |
-| `create_snapshot` | Compile vault entries on a topic into a single structured brief                      |
-
-**System**
-
-| Tool             | Description                                                     |
-| ---------------- | --------------------------------------------------------------- |
-| `context_status` | Vault health — config, file counts, database size, issues       |
-| `list_buckets`   | List entries tagged as bucket entities                          |
-
-**Buckets aren't a separate structure** — they're a `bucket:<name>` tag applied to entries for
-scoping (any tool filtering by `buckets: [...]` is filtering on this tag). `ingest_project`
-creates an optional `kind: bucket` entry as a discoverable index card for one, but the tag alone
-is what does the scoping — nothing enforces the two stay in sync.
-
-Kinds: `insight` · `decision` · `pattern` · `reference` · `contact` — or any custom kind. Derived from vault subdirectory names.
-
-## CLI Reference
-
-| Command                          | Description                                               |
-| -------------------------------- | --------------------------------------------------------- |
-| `context-vault setup`            | Interactive installer — detects tools, writes MCP configs |
-| `context-vault ui [--port 3141]` | Web dashboard                                             |
-| `context-vault status`           | Vault health, paths, entry counts                         |
-| `context-vault reindex`          | Rebuild search index                                      |
-| `context-vault import <path>`    | Import .md, .csv, .json, .txt                             |
-| `context-vault export`           | Export to JSON or CSV                                     |
-| `context-vault update`           | Check for updates                                         |
-| `context-vault uninstall`        | Remove MCP configs                                        |
-
-> **Note:** `context-mcp` is an alias; `context-vault` is the primary command.
-
-## Hosted Option
-
-Cloud sync, web dashboard, and team sharing at [app.context-vault.com](https://app.context-vault.com) — no Node.js required. Setup for Claude Code, Cursor, GPT Actions: [docs/distribution/connect-in-2-minutes.md](docs/distribution/connect-in-2-minutes.md)
+| Command                       | What it does                                        |
+| ----------------------------- | --------------------------------------------------- |
+| `context-vault setup`         | Register the MCP server with your AI tools          |
+| `context-vault doctor`        | Check the install: paths and engine health          |
+| `context-vault status`        | Entry counts and resolved paths                     |
+| `context-vault search <q>`    | Search from the shell                               |
+| `context-vault save`          | Save an entry from the shell                        |
+| `context-vault reindex`       | Rebuild the index from the markdown files           |
+| `context-vault --help`        | Every command                                       |
 
 ## Configuration
 
-Defaults work out of the box:
-
-| Setting   | Default                   |
-| --------- | ------------------------- |
-| Vault dir | `~/vault/`                |
-| Data dir  | `~/.context-mcp/`         |
-| Database  | `~/.context-mcp/vault.db` |
-
-Config: `~/.context-mcp/config.json`. Env vars: `CONTEXT_VAULT_VAULT_DIR`, `CONTEXT_VAULT_DB_PATH`, etc.
-
-## Requirements
-
-None, via `install.sh`/`install.ps1` — it's a native binary. `npx context-vault` additionally needs Node.js 18+ (see below).
-
-| Platform | Install Node.js 18+ (only needed for the npx path) |
-| -------- | ---------------------------------------------------- |
-| **macOS** | `brew install node` or [nvm](https://github.com/nvm-sh/nvm): `nvm install 22` |
-| **Windows** | `winget install OpenJS.NodeJS.LTS` or [nvm-windows](https://github.com/coreybutler/nvm-windows) |
-| **Linux** | [nvm](https://github.com/nvm-sh/nvm): `nvm install 22` or [NodeSource](https://github.com/nodesource/distributions) |
+| Setting   | Default                    | Override                  |
+| --------- | -------------------------- | ------------------------- |
+| Vault     | `~/.vault/`                | `CONTEXT_VAULT_VAULT_DIR` |
+| Data      | `~/.context-mcp/`          | `CONTEXT_VAULT_DATA_DIR`  |
+| Database  | `~/.context-mcp/vault.db`  | `CONTEXT_VAULT_DB_PATH`   |
 
 ## Troubleshooting
 
-- **Install fails (native modules):** `npm rebuild sqlite-vec`
-- **Vault not found:** `mkdir -p ~/vault && context-vault setup`
-- **Stale search results:** `context-vault reindex`
+- **`context-vault: command not found`**: the install folder is not on your PATH. Run `~/.local/bin/context-vault setup`, or add the line the installer printed to your shell profile.
+- **Your agent says the vault tools are missing**: restart the AI tool after setup; in Claude Code, `/mcp` shows whether `context-vault` connected. `context-vault setup --print` shows the entry it writes.
+- **Your agent saved it somewhere else**: say "my vault" in the request.
+- **Stale search results**: `context-vault reindex`.
 
-## Feedback & Community
+The npm package (`npx context-vault`) is still the older 3.20 Node build; use the install script above.
+
+## Hosted option
+
+Cloud sync, web dashboard and team sharing at [app.context-vault.com](https://app.context-vault.com). Setup for Claude Code, Cursor and GPT Actions: [docs/distribution/connect-in-2-minutes.md](docs/distribution/connect-in-2-minutes.md)
+
+## Feedback
 
 - **Questions or ideas?** [Discussions](https://github.com/fellanH/context-vault/discussions)
 - **Found a bug?** [Open an issue](https://github.com/fellanH/context-vault/issues/new/choose)
-- **Using context-vault?** [Show & Tell](https://github.com/fellanH/context-vault/discussions/categories/show-and-tell)
 
 ## Development
 
 ```bash
 git clone https://github.com/fellanH/context-vault.git
 cd context-vault
-nvm use
-npm install
-npm run cli -- setup
+cargo build --release -p context-vault-cli
+./target/release/context-vault --help
 ```
-
-Use `npx context-vault` or `npm run cli --` instead of `context-vault` when running from source.
 
 ## License
 

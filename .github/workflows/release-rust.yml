@@ -20,6 +20,8 @@ on:
 
 jobs:
   build:
+    # Public mirror tags already receive verified assets; do not republish npm from exports.
+    if: github.repository == 'fellanH/context-vault-private'
     name: build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:

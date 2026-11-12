@@ -40,7 +40,7 @@ fn parse_fm_line(lines: &[&str], i: usize, meta: &mut Map<String, Value>) -> usi
         meta.insert(key.to_string(), val);
         return last_consumed + 1;
     }
-    meta.insert(key.to_string(), parse_fm_value(val_str));
+    meta.insert(key.to_string(), parse_fm_value(key, val_str));
     i + 1
 }
 
@@ -66,12 +66,19 @@ fn parse_multiline_tags(lines: &[&str], start_idx: usize) -> (Value, usize) {
     }
 }
 
-fn parse_fm_value(val_str: &str) -> Value {
+fn parse_fm_value(key: &str, val_str: &str) -> Value {
     if let Some(v) = try_parse_quoted(val_str) {
         return v;
     }
     if let Some(v) = try_parse_array(val_str) {
         return v;
+    }
+    // Preserve reserved identifiers/dates as strings for existing v4 files.
+    // Custom typed fields use JSON scalars and inline objects, as emitted below.
+    if !RESERVED_FM_KEYS.contains(&key) {
+        if let Ok(value) = serde_json::from_str::<Value>(val_str) {
+            return value;
+        }
     }
     Value::String(val_str.to_string())
 }
