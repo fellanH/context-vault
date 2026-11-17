@@ -5,7 +5,7 @@
 
 Persistent memory for AI agents: your agent saves what it learns and finds it again in the next session. Entries are plain markdown files on your machine.
 
-> **Hosted tier**: cloud sync, web dashboard, team sharing at [app.context-vault.com](https://app.context-vault.com)
+> **Hosted**: point any MCP client at `https://api.context-vault.com/mcp` and sign in when it asks ([connect page](https://app.context-vault.com/mcp/connect)). Cloud sync, web dashboard and team sharing at [app.context-vault.com](https://app.context-vault.com).
 
 <p align="center">
   <img src="assets/vault-brain.png" alt="Vault Brain — 3D knowledge graph visualization showing nodes, edges, and hub detection" width="800">
@@ -43,6 +43,15 @@ This adds Context Vault to the MCP config of Claude Code and every other client 
 
 The answer comes from the vault, and the entry is a markdown file under `~/.vault/` that you can open and edit. `context-vault doctor` should print `engine health: OK`.
 
+**Check it without an AI tool.** The same save and search from the shell:
+
+```bash
+context-vault save --title "staging bucket" --body "our staging bucket is called aurora-gravel-17"
+context-vault search "what is our staging bucket called?"
+```
+
+Each hit prints its id, score and title, with the start of the entry under it. The shell search matches words; your AI tool's search also matches meaning once its model has downloaded.
+
 Windows: `irm https://context-vault.com/install.ps1 | iex`, open a new terminal, then steps 2 to 5.
 
 ## What it does
@@ -79,7 +88,7 @@ Kinds (`insight`, `decision`, `pattern`, `reference`, or your own) are folders i
 | `context-vault doctor`        | Check the install: paths and engine health          |
 | `context-vault status`        | Entry counts and resolved paths                     |
 | `context-vault search <q>`    | Search from the shell                               |
-| `context-vault save`          | Save an entry from the shell                        |
+| `context-vault save --title`  | Save an entry from the shell (`--body`, `--kind`)   |
 | `context-vault reindex`       | Rebuild the index from the markdown files           |
 | `context-vault --help`        | Every command                                       |
 

@@ -105,9 +105,10 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
-    /// Save an entry to the vault.
+    /// Save an entry to the vault: `context-vault save --title "..." --body "..."`.
     Save {
-        #[arg(long)]
+        /// Entry kind, as insight, decision or pattern.
+        #[arg(long, default_value = "insight")]
         kind: String,
         #[arg(long)]
         title: String,

@@ -4,6 +4,7 @@ pub use super::row_map::entry_from_row;
 use cv_engine::{Entry, ScoredEntry, SearchOptions};
 
 use super::filters::filter_clause;
+use super::fts_query;
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
@@ -24,22 +25,6 @@ pub fn get_entry(conn: &Connection, id: &str) -> Result<Option<Entry>> {
     Ok(result)
 }
 
-/// Turn arbitrary user text into a safe FTS5 MATCH expression. FTS5 parses `-`, `:`, `"`,
-/// `*`, `(`, and `AND/OR/NOT/NEAR` as operators, so a bareword like `session-end` or a
-/// stray `:` raises `no such column` / syntax errors. Wrapping each whitespace token in a
-/// double-quoted phrase (internal quotes doubled) makes FTS5 treat it as a literal string;
-/// tokens are space-joined (implicit AND — same semantics plain barewords already had for
-/// normal input). Tokens with no alphanumeric char are dropped; `None` when nothing
-/// searchable remains.
-fn sanitize_fts_query(query: &str) -> Option<String> {
-    let phrases: Vec<String> = query
-        .split_whitespace()
-        .filter(|tok| tok.chars().any(|c| c.is_alphanumeric()))
-        .map(|tok| format!("\"{}\"", tok.replace('"', "\"\"")))
-        .collect();
-    (!phrases.is_empty()).then(|| phrases.join(" "))
-}
-
 /// NULL rank (out-of-sync external-content index) reads as `None` -> unranked (0.0), so a
 /// stale index degrades to unscored hits instead of crashing the search.
 fn scored_from_fts(entry: Entry, rank: Option<f32>) -> ScoredEntry {
@@ -48,14 +33,26 @@ fn scored_from_fts(entry: Entry, rank: Option<f32>) -> ScoredEntry {
 }
 
 pub fn fts_search(conn: &Connection, query: &str, opts: SearchOptions) -> Result<Vec<ScoredEntry>> {
-    let Some(match_query) = sanitize_fts_query(query) else {
+    let Some(match_query) = fts_query::all_words(query) else {
         return Ok(Vec::new());
     };
+    let all_words = fts_match(conn, &match_query, &opts)?;
+    if !all_words.is_empty() {
+        return Ok(all_words);
+    }
+    // A question rarely has every word in the entry it means: fall back to any word, ranked.
+    match fts_query::any_word(query) {
+        Some(any_query) => fts_match(conn, &any_query, &opts),
+        None => Ok(all_words),
+    }
+}
+
+fn fts_match(conn: &Connection, match_query: &str, opts: &SearchOptions) -> Result<Vec<ScoredEntry>> {
     let sql = format!(
         // `fts.rank IS NULL` first in ORDER BY keeps unscored matches (stale external-content
         // index -> bm25 returns NULL) sorted LAST instead of SQLite's default NULLs-first.
         "SELECT v.id, v.kind, v.category, v.title, v.body, v.tags, v.meta, v.source, v.identity_key, v.tier, v.indexed, v.created_at, v.updated_at, v.expires_at, v.superseded_by, v.related_to, v.hit_count, v.recall_count, v.recall_sessions, v.last_recalled_at, v.heat_tier, v.summary_condensed, v.summary_keypoint, v.file_path, v.last_accessed_at, v.source_files, fts.rank FROM vault_fts fts JOIN vault v ON fts.rowid = v.rowid WHERE vault_fts MATCH ?1{} ORDER BY fts.rank IS NULL, fts.rank ASC LIMIT ? OFFSET ?",
-        filter_clause(&opts)
+        filter_clause(opts)
     );
     let mut stmt = conn.prepare(&sql)?;
     let scored = stmt
@@ -128,31 +125,4 @@ pub fn fuse_results(fts: Vec<ScoredEntry>, vec: Vec<ScoredEntry>) -> Vec<ScoredE
         &tier_boosts,
         &heat_boosts,
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::sanitize_fts_query;
-
-    #[test]
-    fn quotes_tokens_and_neutralizes_fts_operators() {
-        // The pre-fix crash case: `session-end` was parsed as an FTS operator expression.
-        assert_eq!(
-            sanitize_fts_query("session-end transcript parser").as_deref(),
-            Some(r#""session-end" "transcript" "parser""#)
-        );
-        // A stray colon (column-filter syntax) is neutralized too.
-        assert_eq!(
-            sanitize_fts_query("bucket:omni foo").as_deref(),
-            Some(r#""bucket:omni" "foo""#)
-        );
-    }
-
-    #[test]
-    fn drops_punctuation_only_tokens_and_empties() {
-        assert_eq!(sanitize_fts_query("   ").as_deref(), None);
-        assert_eq!(sanitize_fts_query("- : *").as_deref(), None);
-        // Embedded double-quote is doubled so the phrase stays well-formed.
-        assert_eq!(sanitize_fts_query(r#"a"b"#).as_deref(), Some(r#""a""b""#));
-    }
 }

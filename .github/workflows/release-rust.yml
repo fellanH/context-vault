@@ -28,14 +28,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macos-latest, not a pinned image: GitHub stopped serving macos-14 by 17 Nov 2026
+          # ("The configuration 'macos-14-arm64-us-xl' is not supported"), which cancelled v4.0.1's macOS builds.
           - target: aarch64-apple-darwin
-            os: macos-14
-          # Cross-compiled on Apple Silicon (macos-14): the macos-13 Intel runners are
+            os: macos-latest
+          # Cross-compiled on Apple Silicon (macos-latest): the macos-13 Intel runners are
           # effectively unavailable on this account (two runs queued 20-40min, never
           # assigned). clang cross-compiles to x86_64 natively (-arch x86_64), no extra
           # toolchain; ort/rusqlite resolve the x86_64-apple-darwin target fine.
           - target: x86_64-apple-darwin
-            os: macos-14
+            os: macos-latest
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
@@ -88,6 +90,8 @@ jobs:
   publish:
     name: publish npm packages
     needs: build
+    # Only a pushed release tag publishes; a manual dispatch (a test of the build matrix) never does.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

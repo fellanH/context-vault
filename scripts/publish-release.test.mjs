@@ -31,7 +31,11 @@ if(tool==='git') {
 } else if(tool==='scaffold') {
  if(process.env.CV_TEST_REFUSE_EXPORT) process.exit(2);
 } else if(tool==='gh') {
- if(args[0]==='run') console.log('[{"databaseId":1,"status":"completed","conclusion":"success"}]');
+ if(args[0]==='run'&&args[1]==='view') {
+  const fail=(process.env.CV_TEST_FAIL_JOB||'').split(',');
+  const names=['build aarch64-apple-darwin','build x86_64-unknown-linux-gnu','publish npm packages','publish GitHub Release (install.sh / install.ps1 source)'];
+  console.log(JSON.stringify({jobs:names.map(name=>({name,conclusion:fail.some(f=>f&&name.startsWith(f))?'failure':'success'}))}));
+ } else if(args[0]==='run') console.log('[{"databaseId":1,"status":"completed","conclusion":"success"}]');
  else if(args[1]==='download') {
   const dir=args[args.indexOf('--dir')+1];
   const files=['aarch64-apple-darwin.tar.gz','x86_64-apple-darwin.tar.gz','aarch64-unknown-linux-gnu.tar.gz','x86_64-unknown-linux-gnu.tar.gz','x86_64-pc-windows-msvc.zip'].map(f=>'context-vault-'+f);
@@ -80,5 +84,17 @@ test('confcheck refusal prevents public release creation', t => {
 test('corrupt private assets prevent even the public export', t => {
   const { result, calls } = fixture(t).run('--apply', { CV_TEST_CORRUPT: '1' });
   assert.notEqual(result.status, 0);
+  assert.ok(!calls.some(c => c.tool === 'scaffold'));
+});
+test('a failed npm job leaves the public GitHub release to go ahead, with a warning', t => {
+  const { result, calls } = fixture(t).run('--apply', { CV_TEST_FAIL_JOB: 'publish npm' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /npm publish failure/);
+  assert.ok(calls.some(c => c.tool === 'gh' && c.args[1] === 'create'));
+});
+test('a failed build job prevents even the public export', t => {
+  const { result, calls } = fixture(t).run('--apply', { CV_TEST_FAIL_JOB: 'build x86_64' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /build x86_64-unknown-linux-gnu failure/);
   assert.ok(!calls.some(c => c.tool === 'scaffold'));
 });

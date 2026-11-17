@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use context_vault_core::engine::{SaveInput, SearchOptions, ListOptions, VaultEngine};
+use context_vault_core::engine::{ListOptions, SaveInput, ScoredEntry, SearchOptions, VaultEngine};
 
 use crate::engine_cmd;
 
@@ -60,19 +60,30 @@ pub async fn run_search(query: &str, limit: Option<usize>, format: &str) -> Resu
 
     match format {
         "json" => println!("{}", serde_json::to_string_pretty(&results)?),
-        "text" => {
-            for result in &results {
-                println!(
-                    "{}  {:.4}  {}",
-                    result.entry.id,
-                    result.score,
-                    result.entry.title.as_deref().unwrap_or("")
-                );
-            }
-        }
+        "text" => print_text(query, &results),
         other => return Err(anyhow::anyhow!("unknown --format '{other}', expected 'text' or 'json'")),
     }
     Ok(())
+}
+
+/// One line per hit; a miss says so on stderr, so an empty answer is never silent (OPS-288).
+fn print_text(query: &str, results: &[ScoredEntry]) {
+    if results.is_empty() {
+        eprintln!("No results for \"{query}\". Try a word that is in the entry, such as a name or a term from its title.");
+    }
+    for result in results {
+        println!("{}  {:.4}  {}", result.entry.id, result.score, result.entry.title.as_deref().unwrap_or(""));
+        println!("    {}", snippet(&result.entry.body));
+    }
+}
+
+/// The body on one line, cut at about 120 characters, so the answer shows under its title.
+fn snippet(body: &str) -> String {
+    let line = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    match line.char_indices().nth(120) {
+        Some((cut, _)) => format!("{}…", &line[..cut]),
+        None => line,
+    }
 }
 
 pub async fn run_recall(

@@ -44,8 +44,15 @@ for (let attempt = 0; attempt < 6 && !runs.length; attempt++) {
   if (!runs.length) await new Promise(resolve => setTimeout(resolve, 5000));
 }
 if (!runs.length) throw new Error('Release CI not found yet. Rerun this completion command later.');
-if (runs[0].status !== 'completed') run('gh', ['run', 'watch', String(runs[0].databaseId), '-R', source, '--exit-status']);
-else if (runs[0].conclusion !== 'success') throw new Error(`Release CI did not succeed: ${runs[0].conclusion}`);
+if (runs[0].status !== 'completed') run('gh', ['run', 'watch', String(runs[0].databaseId), '-R', source]);
+// The native installer reads only the GitHub Release, so the builds and that job gate the
+// public mirror; the npm job (the old npx path) can fail without holding it back (OPS-288).
+const jobs = JSON.parse(run('gh', ['run', 'view', String(runs[0].databaseId), '-R', source, '--json', 'jobs'])).jobs;
+const gating = jobs.filter(job => job.name.startsWith('build ') || job.name.startsWith('publish GitHub Release'));
+const failed = gating.filter(job => job.conclusion !== 'success');
+if (!gating.length || failed.length) throw new Error(`Release CI did not succeed: ${failed.map(job => `${job.name} ${job.conclusion}`).join(', ') || 'no build jobs found'}`);
+const npm = jobs.find(job => job.name.startsWith('publish npm'));
+if (npm && npm.conclusion !== 'success') console.warn(`npm publish ${npm.conclusion}: npx stays on the previous version; the native installer is unaffected.`);
 
 const staging = mkdtempSync(join(tmpdir(), 'cv-public-release-'));
 try {

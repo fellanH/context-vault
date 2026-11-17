@@ -5,6 +5,16 @@ All notable changes to context-vault are documented here.
 
 ## [Unreleased]
 
+## [4.0.2] — 2026-11-17
+
+The first public release since 4.0.0. It also ships the 4.0.1 fixes listed under 4.0.1 below, which were tagged but never published (the release now builds macOS binaries on macos-latest).
+
+### Fixed — a question in plain words finds its memory
+- Search drops filler words ("what", "is", "our", "called") before matching, and when no entry holds every remaining word it falls back to entries holding any of them, best match first. `context-vault search "what is our staging bucket called?"` now returns the staging bucket entry; before, it returned nothing.
+- `context-vault search` prints the start of each entry under its title, and a "No results" line with a hint on stderr instead of empty output.
+- `context-vault save` defaults `--kind` to `insight`, as the MCP `save_context` tool does.
+- README Quick start shows the save and search lines for checking without an AI tool, and names the hosted MCP endpoint `https://api.context-vault.com/mcp`.
+
 ### Fixed — a stranger's first memory
 - `setup` registers the binary's own absolute path, so the MCP server starts even when `~/.local/bin` is not on the AI tool's PATH (the default on macOS and for every GUI-launched client).
 - The MCP server sends `instructions` at initialize: "remember" and "save an insight" go to the vault, not only to a client's built-in memory, and questions about earlier sessions search the vault first.

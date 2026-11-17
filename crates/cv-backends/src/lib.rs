@@ -1,5 +1,6 @@
 pub mod embedder;
 pub(crate) mod filters;
+pub(crate) mod fts_query;
 pub mod queries;
 pub mod reindex;
 mod reindex_scan;

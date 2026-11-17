@@ -1,6 +1,6 @@
 [package]
 name = "context-vault-cli"
-version = "4.0.0"
+version = "4.0.2"
 edition.workspace = true
 license.workspace = true
 description = "Context Vault CLI — engine subcommands (mcp, save/get/search/list/delete, lifecycle). Ships the `context-vault` binary."
