@@ -1,5 +1,5 @@
-//! Read-only handlers: get_context, list_context, context_status, list_buckets.
-//! These handlers only query the engine; they have no side effects.
+//! Read handlers: get_context, list_context, context_status, list_buckets.
+//! They only query the engine, except that get_context logs which entries it returned (OPS-473).
 
 use std::sync::Arc;
 use serde_json::Value;
@@ -42,6 +42,11 @@ pub async fn handle_get_context(
     if results.is_empty() {
         return Ok(format!("No results found{}",
             query.map(|q| format!(" for \"{q}\"")).unwrap_or_default()));
+    }
+
+    let ids: Vec<String> = results.iter().map(|r| r.entry.id.clone()).collect();
+    if let Err(e) = engine.log_reads(&ids, query.unwrap_or("")).await {
+        eprintln!("[context-vault] access log: {e:#}");
     }
 
     let total = results.len();

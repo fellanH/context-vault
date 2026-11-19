@@ -20,8 +20,9 @@ on:
 
 jobs:
   build:
-    # Public mirror tags already receive verified assets; do not republish npm from exports.
-    if: github.repository == 'fellanH/context-vault-private'
+    # Builds run on the public repository's runners. scripts/publish-release.mjs creates its
+    # pre-release, waits for this run, verifies the archives and only then marks it Latest.
+    if: github.repository == 'fellanH/context-vault'
     name: build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -91,7 +92,8 @@ jobs:
     name: publish npm packages
     needs: build
     # Only a pushed release tag publishes; a manual dispatch (a test of the build matrix) never does.
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Never from the public repository, so while builds run only there this job does not run.
+    if: startsWith(github.ref, 'refs/tags/v') && github.repository != 'fellanH/context-vault'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -145,13 +147,15 @@ jobs:
           sha256sum context-vault-* > SHA256SUMS
           cat SHA256SUMS
       - name: Publish GitHub Release
-        # scripts/release.mjs already runs `gh release create` with CHANGELOG-sourced
-        # notes right after the tag push, before this job (which waits on the 5-target
-        # cross-compile matrix) finishes. softprops/action-gh-release updates that
+        # scripts/publish-release.mjs creates the mirror's release as a pre-release with the
+        # CHANGELOG notes before this job runs. softprops/action-gh-release updates that
         # existing release rather than replacing it -- no `body`/`generate_release_notes`
-        # here so the CHANGELOG notes survive; this step only attaches the assets.
+        # here so the notes survive. It stays a pre-release and not Latest here, so only
+        # publish-release.mjs marks it Latest, after verifying the checksums.
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: true
+          make_latest: false
           files: |
             dist/archives/context-vault-*
             dist/archives/SHA256SUMS

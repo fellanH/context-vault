@@ -131,14 +131,16 @@ impl VaultEngine for SqliteBackend {
         query: &str,
         opts: SearchOptions,
     ) -> Result<Vec<ScoredEntry>> {
-        let fts_results = self.fts_search(query, opts.clone()).await?;
+        let (fts_results, every_word) = tokio::task::spawn_blocking({
+            let (db, query, opts) = (self.db.clone(), query.to_string(), opts.clone());
+            move || super::queries::fts_search_blocks(&db.lock().unwrap(), &query, opts)
+        })
+        .await??;
         // Embed the query for the vec lane. A signal-free embedding (NoOp) makes
         // vec_search return empty, so hybrid_search degrades cleanly to FTS-only.
         let query_embedding = self.embedder.embed(query).await.unwrap_or_default();
         let vec_results = self.vec_search(&query_embedding, opts).await?;
-        Ok(super::queries::fuse_results(
-            fts_results, vec_results,
-        ))
+        Ok(super::queries::fuse_results(fts_results, every_word, vec_results))
     }
 
     async fn fts_search(

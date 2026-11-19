@@ -52,6 +52,9 @@ pub async fn run_status() -> Result<()> {
     let health = engine.health().await?;
     println!("vault: {} ({})", if health.ok { "ok" } else { "unhealthy" }, health.message);
     println!("entries: {} total, {} indexed", stats.total_entries, stats.indexed_entries);
+    if stats.total_entries > stats.indexed_entries {
+        print_unindexed(stats.total_entries - stats.indexed_entries);
+    }
     print_paths()?;
     crate::cmd_vault::print_sizes(engine.as_ref()).await?;
     println!("by kind:");
@@ -63,6 +66,18 @@ pub async fn run_status() -> Result<()> {
         println!("  {}: {}", tier, count);
     }
     Ok(())
+}
+
+/// Why some entries are not indexed (OPS-406): which kinds they are and the rule that keeps them
+/// out of search. v4 only (it reads the db); on v5 or an unreadable db it says the count alone.
+fn print_unindexed(n: u64) {
+    let kinds = resolve_db_path().ok().and_then(|db| rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok()).and_then(|c| {
+        let mut stmt = c.prepare("SELECT kind, COUNT(*) FROM vault WHERE indexed = 0 GROUP BY kind ORDER BY 2 DESC LIMIT 6").ok()?;
+        let rows: Vec<String> = stmt.query_map([], |r| Ok(format!("{} {}", r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).ok()?.filter_map(|r| r.ok()).collect();
+        Some(rows.join(", "))
+    });
+    println!("not indexed: {n} ({}). Search and hints skip them; they stay on disk and in `list`.", kinds.unwrap_or_default());
+    println!("  why: saved with indexed: false, or the vault's indexing rule leaves their kind out (excluded kinds or categories, events with auto_index_events off, bodies over the size cap).");
 }
 
 /// On v5 the health line names the vaults; v4's db and vault paths would mislead.
@@ -112,5 +127,7 @@ pub fn run_vault_use(name: &str) -> Result<()> {
     vaults::use_vault(&mut registry, name.to_string())?;
     vaults::save_registry(&registry)?;
     println!("active vault: {name}");
+    // Before `migrate`, the engine takes its folder from config.json, not vaults.json (OPS-400).
+    println!("note: the engine still reads {} (config.json); run `context-vault migrate` to switch vaults by name", resolve_vault_dir()?);
     Ok(())
 }

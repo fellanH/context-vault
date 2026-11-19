@@ -72,6 +72,15 @@ CREATE TABLE IF NOT EXISTS co_retrievals (
     PRIMARY KEY (entry_a, entry_b)
 );
 
+-- Prompt hints the hook showed, per session (OPS-473); reads land in access_log.
+CREATE TABLE IF NOT EXISTS hint_log (
+    id          INTEGER PRIMARY KEY,
+    entry_id    TEXT NOT NULL,
+    session_id  TEXT NOT NULL,
+    shown_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_hint_log_shown ON hint_log(shown_at);
+
 CREATE TABLE IF NOT EXISTS access_log (
     id          INTEGER PRIMARY KEY,
     entry_id    TEXT NOT NULL,

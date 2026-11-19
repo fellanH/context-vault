@@ -11,6 +11,8 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use context_vault_core::engine::VaultEngine;
+use cv_lifecycle::archive_filter::{archive_by_filter, ArchiveFilter};
+use cv_lifecycle::archive_manifest::restore_by_manifest;
 use cv_lifecycle::{
     archive_entries, find_archive_candidates, generate_summary_tiers, restore_entry,
     run_tier_analysis, TierAnalysisOptions,
@@ -18,9 +20,19 @@ use cv_lifecycle::{
 
 use crate::engine_cmd;
 
-pub async fn run_archive(days: Option<u32>) -> Result<()> {
+pub async fn run_archive(days: Option<u32>, filter: ArchiveFilter, apply: bool) -> Result<()> {
     let engine = engine_cmd::build_sqlite().await?;
-    let days = days.unwrap_or(365) as i64;
+    if !filter.is_empty() {
+        let db = engine.raw_db();
+        let report = archive_by_filter(&db.lock().unwrap(), &engine.vault_dir_path(), &filter, apply)?;
+        print_filter_report(&report, apply);
+        return Ok(());
+    }
+    run_archive_age(&engine, days.unwrap_or(365) as i64, apply)
+}
+
+/// Age mode: entries untouched for more than `days` days (dry run unless `apply`).
+fn run_archive_age(engine: &context_vault_core::backends::SqliteBackend, days: i64, apply: bool) -> Result<()> {
 
     let mut config: HashMap<String, Option<i64>> = HashMap::new();
     for tier in ["ephemeral", "working", "durable"] {
@@ -34,6 +46,10 @@ pub async fn run_archive(days: Option<u32>) -> Result<()> {
     {
         let conn = db.lock().unwrap();
         candidates = find_archive_candidates(&conn, &config)?;
+        if !apply {
+            println!("dry run: {} entries untouched for more than {days} days would be archived. Add --apply to archive them.", candidates.len());
+            return Ok(());
+        }
         result = archive_entries(&conn, &vault_dir, &candidates)?;
     }
 
@@ -44,8 +60,38 @@ pub async fn run_archive(days: Option<u32>) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_restore(id: &str) -> Result<()> {
+/// OPS-406: every file of an archive manifest back in place (dry run unless `apply`), then a reindex.
+async fn run_restore_manifest(manifest: &std::path::Path, apply: bool) -> Result<()> {
     let engine = engine_cmd::build_sqlite().await?;
+    let (n, verified, skipped) = restore_by_manifest(&engine.vault_dir_path(), manifest, apply)?;
+    if !apply {
+        println!("dry run: {n} entries would be restored, {skipped} skipped (already in place or missing in _archive). Add --apply.");
+        return Ok(());
+    }
+    let summary = engine.reindex(context_vault_core::engine::ReindexOptions { full: false }).await?;
+    println!("restored {n} ({verified} verified byte for byte), {skipped} skipped; reindexed {} entries.", summary.entries_reindexed);
+    Ok(())
+}
+
+/// OPS-406: what a filter archive matched, moved and verified, or would move on a dry run.
+fn print_filter_report(r: &cv_lifecycle::archive_filter::FilterReport, apply: bool) {
+    for (kind, n) in &r.by_kind {
+        println!("{n:>8}  {kind}");
+    }
+    println!("{} entries match; {} have no file in the vault and stay where they are.", r.matched, r.no_file);
+    match &r.manifest {
+        Some(m) if apply => println!("archived {}; {} of them verified byte for byte in _archive/. Manifest: {}. Undo: context-vault restore --manifest {} --apply", r.moved, r.verified, m.display(), m.display()),
+        _ => println!("dry run: nothing moved. Add --apply to archive {} entries (a manifest is written first).", r.matched - r.no_file),
+    }
+}
+
+pub async fn run_restore(id: Option<String>, manifest: Option<std::path::PathBuf>, apply: bool) -> Result<()> {
+    if let Some(m) = manifest {
+        return run_restore_manifest(&m, apply).await;
+    }
+    let engine = engine_cmd::build_sqlite().await?;
+    let id = id.ok_or_else(|| anyhow::anyhow!("name an entry id, or --manifest <file>"))?;
+    let id = id.as_str();
     let db = engine.raw_db();
     let vault_dir = engine.vault_dir_path();
     let result = {

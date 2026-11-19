@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use chrono::{Duration, Utc};
-use cv_vault::collectors::{launchd_label, load, parse_time, verdict, Collector, LastRun};
+use cv_vault::collectors::{launchd_label, load, parse_time, verdict, Collector, LastRun, AGENT_SOURCE};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 const VIOLATION_WINDOW_DAYS: i64 = 30;
@@ -76,7 +76,7 @@ fn print_unregistered(conn: &Connection, registered: &[&str]) -> Result<()> {
     let rows = stmt.query_map([&since], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))?;
     let (unregistered, notes): (Vec<_>, Vec<_>) = rows
         .filter_map(|r| r.ok())
-        .filter(|(s, _, _)| !registered.contains(&s.as_str()))
+        .filter(|(s, _, _)| !registered.contains(&s.as_str()) && s.as_str() != AGENT_SOURCE)
         .partition(|(_, n, _)| *n >= WRITER_MIN_ROWS);
     if !notes.is_empty() {
         println!("one-off provenance sources (< {WRITER_MIN_ROWS} rows each, not collectors): {}", notes.len());

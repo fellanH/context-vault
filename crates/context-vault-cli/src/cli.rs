@@ -185,12 +185,32 @@ pub enum Commands {
     /// Ingest from a project directory.
     IngestProject { path: String },
     /// Archive entries by criteria.
+    /// With --kind/--tier/--before/--after, every matching entry; else entries untouched for --days.
+    /// A dry run that counts unless --apply; a filter apply writes a manifest that `restore --manifest` undoes.
     Archive {
         #[arg(long)]
         days: Option<u32>,
+        #[arg(long)]
+        kind: Vec<String>,
+        #[arg(long)]
+        tier: Vec<String>,
+        /// Created before this ISO date or time.
+        #[arg(long)]
+        before: Option<String>,
+        /// Created at or after this ISO date or time.
+        #[arg(long)]
+        after: Option<String>,
+        #[arg(long)]
+        apply: bool,
     },
-    /// Restore an archived entry.
-    Restore { id: String },
+    /// Restore an archived entry by id, or every entry of an archive manifest (dry run unless --apply).
+    Restore {
+        id: Option<String>,
+        #[arg(long)]
+        manifest: Option<std::path::PathBuf>,
+        #[arg(long)]
+        apply: bool,
+    },
     /// Generate summaries for entries.
     Summarize,
     /// Analyze and apply tier reassignments.
@@ -272,4 +292,6 @@ pub enum SchemaCommands {
         #[arg(long)]
         dry_run: bool,
     },
+    /// List the kinds the vault holds that vault.toml does not list, with counts and the nearest listed kind.
+    Strays,
 }

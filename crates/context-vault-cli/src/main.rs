@@ -86,6 +86,7 @@ async fn dispatch(cmd: Commands) -> Result<()> {
             SchemaCommands::Init => cmd_schema::run_schema_init(),
             SchemaCommands::Show => cmd_schema::run_schema_show(),
             SchemaCommands::Apply { dry_run } => cmd_schema::run_schema_apply(dry_run).await,
+            SchemaCommands::Strays => cmd_schema::run_schema_strays().await,
         },
         Commands::Move { source, dest, dry_run } => cmd_move::run_move(source, dest, dry_run).await,
         Commands::Save { kind, title, body, tags, tier, source, meta, identity_key } => {
@@ -102,8 +103,8 @@ async fn dispatch(cmd: Commands) -> Result<()> {
         Commands::Stats => engine_cmd::run_stats().await,
         Commands::Ingest { url } => cmd_ingest::run_ingest(&url).await,
         Commands::IngestProject { path } => cmd_ingest::run_ingest_project(&path).await,
-        Commands::Archive { days } => cmd_lifecycle::run_archive(days).await,
-        Commands::Restore { id } => cmd_lifecycle::run_restore(&id).await,
+        Commands::Archive { days, kind, tier, before, after, apply } => cmd_lifecycle::run_archive(days, cv_lifecycle::archive_filter::ArchiveFilter { kinds: kind, tiers: tier, before, after }, apply).await,
+        Commands::Restore { id, manifest, apply } => cmd_lifecycle::run_restore(id, manifest, apply).await,
         Commands::Summarize => cmd_lifecycle::run_summarize().await,
         Commands::Tier => cmd_lifecycle::run_tier().await,
         Commands::Assemble { ids } => cmd_lifecycle::run_assemble(ids).await,

@@ -9,6 +9,9 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::Deserialize;
 
 pub const COLLECTORS_FILENAME: &str = "collectors.toml";
+/// The source an agent's save through the MCP carries when it names none (OPS-469). It is the
+/// agents' own writing, not a collector, so doctor counts it apart from contract violations.
+pub const AGENT_SOURCE: &str = "agent";
 
 #[derive(Debug, Deserialize)]
 pub struct Registry {

@@ -1,4 +1,4 @@
-use super::handlers_schema::describe;
+use super::handlers_schema::{describe, kind_note_for};
 use super::handlers_write::handle_save_context;
 use crate::backends::{NoOpEmbedder, SqliteBackend};
 use crate::engine::VaultEngine;
@@ -55,4 +55,21 @@ async fn describe_then_first_save_succeeds() {
     handle_save_context(engine, &json!({"kind": "decision", "title": "Ship", "body": "ship it", "meta": {"owner": "seat", "status": "made"}}))
         .await
         .expect("a save built from the described rule passes");
+}
+
+/// OPS-405: an open vault that lists kinds tells the writer a kind is new, with the nearest listed one;
+/// a listed kind, a vault listing no kinds and a closed vault (which refuses instead) say nothing.
+#[test]
+fn a_new_kind_on_an_open_vault_is_named_with_its_nearest() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().to_str().unwrap();
+    std::fs::write(tmp.path().join("vault.toml"), TOML.replace("closed_kinds = true", "closed_kinds = false")).unwrap();
+    let open = VaultTaxonomy::load_strict(dir).unwrap();
+    let note = kind_note_for(&open, "decisoin");
+    assert!(note.contains("kind `decisoin` is new") && note.contains("Nearest listed kind: `decision`"), "{note}");
+    assert!(kind_note_for(&open, "bankgirot").contains("is new") && !kind_note_for(&open, "bankgirot").contains("Nearest"));
+    assert_eq!(kind_note_for(&open, "decision"), "");
+    std::fs::write(tmp.path().join("vault.toml"), TOML).unwrap();
+    assert_eq!(kind_note_for(&VaultTaxonomy::load_strict(dir).unwrap(), "decisoin"), "");
+    assert_eq!(kind_note_for(&VaultTaxonomy::minimal(), "anything"), "");
 }

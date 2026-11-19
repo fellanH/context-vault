@@ -21,7 +21,7 @@ async fn make() -> (Arc<dyn VaultEngine>, tempfile::TempDir) {
 
 fn entry(title: &str, body: &str, tags: Option<Vec<&str>>) -> SaveInput {
     SaveInput {
-        kind: "event".to_string(),
+        kind: "insight".to_string(), // events are logs and never hints (OPS-402)
         title: Some(title.to_string()),
         body: body.to_string(),
         tags: tags.map(|ts| ts.into_iter().map(String::from).collect()),

@@ -4,6 +4,7 @@
 //! - `summarize`: Two-tier text summaries (condensed + keypoint)
 //! - `compact`: Gzip cold entry bodies to _archive/ and restore
 //! - `archive`: Age-based entry archival to _archive/ subdirectories
+//! - `archive_filter`: Archive by kind, tier and created range, with a manifest and its restore (OPS-406)
 //! - `assemble`: Role-based context assembly with token budgeting
 //! - `consolidation`: Deduplication via similarity and decay scoring
 //! - `tier_analysis`: Hot/warm/cold tiering via access logs
@@ -11,6 +12,10 @@
 pub mod summarize;
 pub mod compact;
 pub mod archive;
+pub mod archive_filter;
+pub mod archive_manifest;
+#[cfg(test)]
+mod archive_filter_tests;
 pub mod assemble;
 pub mod consolidation;
 pub mod tier_analysis;

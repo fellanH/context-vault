@@ -20,6 +20,7 @@ pub mod capture;
 
 pub use taxonomy::{FieldSpec, FieldType, KindRule, VaultPolicy, VaultTaxonomy};
 pub use schema_check::check_save;
+pub use kind_suggest::nearest;
 pub use reorg::{apply_reorg, plan_reorg, ReorgSummary};
 pub use relocate::{plan_move, MoveSummary};
 pub use frontmatter::format_frontmatter;

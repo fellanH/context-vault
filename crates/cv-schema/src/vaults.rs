@@ -187,3 +187,7 @@ mod casing_tests {
         assert!(written.contains("\"vaultDir\"") && written.contains("\"activeVault\""), "{written}");
     }
 }
+
+#[cfg(test)]
+#[path = "vaults_shape_tests.rs"]
+mod shape_tests;

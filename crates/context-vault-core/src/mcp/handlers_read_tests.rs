@@ -68,3 +68,36 @@ async fn save_supersedes_hides_the_old_entry_not_the_new_one() {
     assert_eq!(stored.superseded_by, None);
     assert_eq!(engine.get(&old).await.unwrap().unwrap().superseded_by, Some(new));
 }
+
+/// OPS-469: an agent's save names its writer even when the agent passes no source.
+#[tokio::test]
+async fn a_save_without_source_is_marked_as_an_agents() {
+    let tmp = tempfile::tempdir().unwrap();
+    let id = |reply: String| reply.split('`').nth(1).unwrap().to_string();
+    let engine = engine(&tmp).await;
+    let bare = id(handle_save_context(engine.clone(), &json!({"kind": "insight", "body": "no source given"})).await.unwrap());
+    let named = id(handle_save_context(engine.clone(), &json!({"kind": "insight", "body": "named", "source": "traffic-run"})).await.unwrap());
+    assert_eq!(engine.get(&bare).await.unwrap().unwrap().source.as_deref(), Some("agent"));
+    assert_eq!(engine.get(&named).await.unwrap().unwrap().source.as_deref(), Some("traffic-run"));
+}
+
+/// OPS-473: the prompt hook's hints land in hint_log under its session, the MCP recall
+/// tool (no session) logs nothing, and get_context logs what it returned in access_log,
+/// so "hints shown, then read" is one join.
+#[tokio::test]
+async fn hints_shown_and_reads_are_logged() {
+    let tmp = tempfile::tempdir().unwrap();
+    let engine = engine(&tmp).await;
+    handle_save_context(engine.clone(), &json!({"kind": "insight", "title": "Gadget rollout plan", "body": "gadget rollout notes"})).await.unwrap();
+
+    crate::mcp::recall_in(engine.clone(), "gadget rollout plan for today", None, None, None, 3).await.unwrap();
+    crate::mcp::recall_in(engine.clone(), "gadget rollout plan for today", None, None, Some("s-1"), 3).await.unwrap();
+    handle_get_context(engine.clone(), &json!({"query": "gadget"})).await.unwrap();
+
+    let db = rusqlite::Connection::open(tmp.path().join("vault.db")).unwrap();
+    let opened: i64 = db.query_row(
+        "SELECT count(*) FROM hint_log h JOIN access_log a ON a.entry_id = h.entry_id AND a.accessed_at >= h.shown_at
+         WHERE h.session_id = 's-1'", [], |r| r.get(0)).unwrap();
+    let shown: i64 = db.query_row("SELECT count(*) FROM hint_log", [], |r| r.get(0)).unwrap();
+    assert_eq!((shown, opened), (1, 1));
+}

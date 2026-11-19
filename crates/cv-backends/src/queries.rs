@@ -33,18 +33,28 @@ fn scored_from_fts(entry: Entry, rank: Option<f32>) -> ScoredEntry {
 }
 
 pub fn fts_search(conn: &Connection, query: &str, opts: SearchOptions) -> Result<Vec<ScoredEntry>> {
+    Ok(fts_search_blocks(conn, query, opts)?.0)
+}
+
+/// Full-text hits and how many of the first held every word (the rest are any-word fill), so
+/// fusion can keep a closer match ahead of a newer weak one (OPS-468).
+pub fn fts_search_blocks(conn: &Connection, query: &str, opts: SearchOptions) -> Result<(Vec<ScoredEntry>, usize)> {
     let Some(match_query) = fts_query::all_words(query) else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), 0));
     };
-    let all_words = fts_match(conn, &match_query, &opts)?;
-    if !all_words.is_empty() {
-        return Ok(all_words);
-    }
-    // A question rarely has every word in the entry it means: fall back to any word, ranked.
-    match fts_query::any_word(query) {
-        Some(any_query) => fts_match(conn, &any_query, &opts),
-        None => Ok(all_words),
-    }
+    let mut hits = fts_match(conn, &match_query, &opts)?;
+    let every_word = hits.len();
+    // A question rarely has every word in the entry it means: any word fills in, ranked, when
+    // nothing matched every word, or after those hits when the caller asks (OPS-288, OPS-369).
+    let fill = hits.is_empty() || (opts.fill_any_word && opts.offset == 0 && hits.len() < opts.limit);
+    let Some(any_query) = fts_query::any_word(query).filter(|_| fill) else {
+        return Ok((hits, every_word));
+    };
+    let seen: std::collections::HashSet<String> = hits.iter().map(|h| h.entry.id.clone()).collect();
+    let room = opts.limit.saturating_sub(hits.len());
+    let more = fts_match(conn, &any_query, &opts)?;
+    hits.extend(more.into_iter().filter(|h| !seen.contains(&h.entry.id)).take(room));
+    Ok((hits, every_word))
 }
 
 fn fts_match(conn: &Connection, match_query: &str, opts: &SearchOptions) -> Result<Vec<ScoredEntry>> {
@@ -102,7 +112,7 @@ pub fn vec_search(conn: &Connection, embedding: &[f32], opts: SearchOptions) -> 
     Ok(scored)
 }
 
-pub fn fuse_results(fts: Vec<ScoredEntry>, vec: Vec<ScoredEntry>) -> Vec<ScoredEntry> {
+pub fn fuse_results(fts: Vec<ScoredEntry>, every_word: usize, vec: Vec<ScoredEntry>) -> Vec<ScoredEntry> {
     let tier_boosts = {
         let mut m = HashMap::new();
         m.insert("durable".to_string(), 1.5);
@@ -121,6 +131,7 @@ pub fn fuse_results(fts: Vec<ScoredEntry>, vec: Vec<ScoredEntry>) -> Vec<ScoredE
 
     cv_engine::search::rrf_fuse(
         fts.iter().map(|se| (se.entry.clone(), se.score)).collect(),
+        every_word,
         vec.iter().map(|se| (se.entry.clone(), se.score)).collect(),
         &tier_boosts,
         &heat_boosts,

@@ -5,6 +5,26 @@ All notable changes to context-vault are documented here.
 
 ## [Unreleased]
 
+## [4.0.4] — 2026-11-19
+
+The first public release since 4.0.2. It carries everything tagged as 4.0.3, which was never published, and its binaries are built on this public repository's own runners.
+
+### Fixed — the best match comes first
+- `context-vault search` ranks closer matches higher with distinct scores: hits holding every word of the query print first, then hits holding some of them, and tier, heat and recency only order hits inside each block, so a newer weak match no longer sits above an older exact one.
+- Prompt hints (the `recall-hint` hook) leave out session and event logs, put entries whose titles hold the prompt's words first, and prefer the session's own project. On a blind 30-prompt test, useful hints went from 14 of 81 to 30 of 86, with no prompt worse.
+- A save that names no source is recorded as source `agent`, and `doctor` counts those apart from real contract violations.
+- `vault use` before `migrate` says the v4 engine still reads `config.json`.
+
+### Added
+- `context-vault archive` moves old entries out by kind, tier and created range. It is a dry run unless `--apply`, writes a manifest with each file's size and hash before anything moves, checks the bytes after, and `restore --manifest` undoes it.
+- `context-vault status` says how many entries are not indexed, of which kinds, and why.
+- Saving a kind that is new to a vault's `vault.toml` names the nearest listed kind, and `context-vault schema strays` lists the vault's unlisted kinds.
+- The hints the prompt hook shows and the entries `get_context` returns are logged locally, so the share of hints an agent opens is one query.
+
+## [4.0.3] — 2026-11-19
+
+Tagged but never published; its changes ship in 4.0.4.
+
 ## [4.0.2] — 2026-11-17
 
 The first public release since 4.0.0. It also ships the 4.0.1 fixes listed under 4.0.1 below, which were tagged but never published (the release now builds macOS binaries on macos-latest).

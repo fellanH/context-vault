@@ -48,14 +48,13 @@ async fn try_recall() -> Result<Option<(String, String)>> {
     // like a prompt-injection: an unrelated session being handed another project's
     // "adopt this charter" event). Same project-from-cwd convention as
     // `cv_ingest::build_signals`.
-    let scope = v
-        .get("cwd")
-        .and_then(|c| c.as_str())
-        .and_then(project_from_cwd);
+    let cwd = v.get("cwd").and_then(|c| c.as_str());
+    let scope = cwd.and_then(project_from_cwd);
 
     let engine: Arc<dyn VaultEngine> =
         engine_cmd::build_engine().await.context("building vault engine")?;
-    let hints = context_vault_core::mcp::recall(engine, &prompt, scope.as_deref(), MAX_HINTS)
+    let session = v.get("session_id").and_then(|s| s.as_str());
+    let hints = context_vault_core::mcp::recall_in(engine, &prompt, scope.as_deref(), cwd, session, MAX_HINTS)
         .await
         .map_err(|e| anyhow::anyhow!(e))
         .context("running recall")?;

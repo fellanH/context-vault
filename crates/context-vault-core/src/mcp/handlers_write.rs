@@ -61,7 +61,8 @@ pub async fn handle_save_context(
         body: str_arg("body").ok_or("Required: body")?,
         tags,
         meta: apply_to_meta(args.get("meta").cloned(), None, args.get("situations"), args.get("situation_order"))?,
-        source: str_arg("source"),
+        // A save that names no source is an agent's own (OPS-469): it says so, so every row has a writer.
+        source: str_arg("source").or_else(|| Some(cv_vault::collectors::AGENT_SOURCE.to_string())),
         identity_key: str_arg("identity_key"),
         tier: str_arg("tier"),
         expires_at: str_arg("expires_at"),
@@ -69,9 +70,10 @@ pub async fn handle_save_context(
         related_to: str_list("related_to"),
     };
 
+    let kind = input.kind.clone();
     let output = engine.save(input).await.map_err(|e| e.to_string())?;
 
-    Ok(format!("✓ Saved entry: `{}`", output.id))
+    Ok(format!("✓ Saved entry: `{}`{}", output.id, super::handlers_schema::new_kind_note(&kind)))
 }
 
 /// Implements delete_context: remove an entry by ID.

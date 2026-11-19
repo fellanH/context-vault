@@ -158,10 +158,9 @@ console.log('  build passed\n');
 
 // --- Commit, tag, push ---
 //
-// Publishing is delegated to CI: pushing the v<version> tag triggers
-// .github/workflows/release-rust.yml, which cross-compiles every target,
-// publishes the @context-vault/cli-<triple> platform packages, then publishes the
-// main `context-vault` package. See project-management/docs/rust-cutover-runbook.md.
+// The tag is pushed here; scripts/publish-release.mjs (run at the end) exports it to the public
+// repository, whose release-rust.yml run cross-compiles every target and attaches the archives.
+// npm is not published while builds run only on the public repository.
 
 run(`git add ${VERSION_FILES.join(' ')} CHANGELOG.md`);
 run(`git commit -m "v${newVersion}"`);

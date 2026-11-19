@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod access;
 pub mod search;
 pub mod situation_meta;
 pub mod situations;
@@ -80,6 +81,12 @@ pub struct SearchOptions {
     /// left out of search unless this is set.
     #[serde(default)]
     pub include_superseded: bool,
+    /// After the hits holding every word, fill up to `limit` with hits holding any of them,
+    /// ranked by bm25, so a closer match scores higher and one exact hit is not the only line
+    /// (OPS-369). The CLI's `search` sets it; recall and the MCP tools keep every-word hits.
+    /// SQLite backend only: the v5 index already ranks any word by bm25, so it ignores this.
+    #[serde(default)]
+    pub fill_any_word: bool,
     pub limit: usize,
     pub offset: usize,
 }
@@ -148,7 +155,7 @@ pub trait Embedder: Send + Sync {
 // async_trait adds must_use to its boxed Future, which is already must_use.
 #[allow(clippy::double_must_use)]
 #[async_trait]
-pub trait VaultEngine: Send + Sync + situations::SituationEngine {
+pub trait VaultEngine: Send + Sync + situations::SituationEngine + access::AccessLog {
     async fn save(&self, input: SaveInput) -> anyhow::Result<SaveOutput>;
     async fn delete(&self, id: &str) -> anyhow::Result<()>;
     async fn get(&self, id: &str) -> anyhow::Result<Option<Entry>>;

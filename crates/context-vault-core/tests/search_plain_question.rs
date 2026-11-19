@@ -59,3 +59,40 @@ async fn keyword_search_keeps_all_words_precision() {
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].entry.title.as_deref(), Some("staging bucket"));
 }
+
+// OPS-369: with several hits, CLI search ranks the closer match higher with different scores;
+// before, only the entry holding every word came back, and one hit always scored 1.6667.
+async fn three_matches(e: &SqliteBackend) {
+    for (title, body) in [("one", "harbor notes"), ("two", "harbor lantern notes"), ("three", "harbor lantern ferry notes")] {
+        e.save(entry(title, body)).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn cli_search_ranks_closer_matches_higher_with_distinct_scores() {
+    let (e, _tmp) = make().await;
+    three_matches(&e).await;
+    let hits = e.hybrid_search("harbor lantern ferry", SearchOptions { fill_any_word: true, ..opts() }).await.unwrap();
+    let titles: Vec<&str> = hits.iter().filter_map(|h| h.entry.title.as_deref()).collect();
+    assert_eq!(titles, vec!["three", "two", "one"], "three words, then two, then one");
+    assert!(hits[0].score > hits[1].score && hits[1].score > hits[2].score, "scores differ, best first: {:?}",
+        hits.iter().map(|h| h.score).collect::<Vec<_>>());
+}
+
+#[tokio::test]
+async fn recall_keeps_every_word_hits_only() {
+    let (e, _tmp) = make().await;
+    three_matches(&e).await;
+    let hits = e.hybrid_search("harbor lantern ferry", opts()).await.unwrap();
+    assert_eq!(hits.iter().filter_map(|h| h.entry.title.as_deref()).collect::<Vec<_>>(), vec!["three"]);
+}
+
+#[tokio::test]
+async fn the_fill_keeps_the_search_filters() {
+    let (e, _tmp) = make().await;
+    three_matches(&e).await;
+    e.save(SaveInput { kind: "decision".to_string(), title: Some("four".to_string()), body: "harbor lantern decision".to_string(), ..Default::default() }).await.unwrap();
+    let opts = SearchOptions { fill_any_word: true, kind: Some("decision".to_string()), ..opts() };
+    let hits = e.hybrid_search("harbor lantern ferry", opts).await.unwrap();
+    assert_eq!(hits.iter().filter_map(|h| h.entry.title.as_deref()).collect::<Vec<_>>(), vec!["four"]);
+}

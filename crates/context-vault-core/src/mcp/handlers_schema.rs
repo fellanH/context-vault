@@ -43,3 +43,23 @@ pub(super) fn describe(t: &VaultTaxonomy, kind: Option<&str>) -> Value {
         }),
     }
 }
+
+/// After a save to a vault whose vault.toml lists kinds but does not refuse new ones (OPS-405):
+/// tell the writer its kind is new, with the nearest listed kind, so a typo or a one-off kind is
+/// caught by the agent that wrote it. Empty when the kind is listed, no kinds are listed, or the
+/// vault.toml cannot be read (the save path reports that itself).
+pub(super) fn new_kind_note(kind: &str) -> String {
+    let Ok(vault_dir) = crate::paths::resolve_vault_dir() else { return String::new() };
+    let Ok(t) = VaultTaxonomy::load_strict(&vault_dir) else { return String::new() };
+    kind_note_for(&t, kind)
+}
+
+/// The note for one taxonomy: empty when the kind is listed, nothing is listed, or new kinds are refused anyway.
+pub(super) fn kind_note_for(t: &VaultTaxonomy, kind: &str) -> String {
+    if t.kinds().is_empty() || t.kinds().contains_key(kind) || t.policy().closed_kinds {
+        return String::new();
+    }
+    let listed: Vec<&str> = t.kinds().keys().map(|k| k.as_str()).collect();
+    let hint = cv_vault::nearest(kind, &listed).map(|k| format!(" Nearest listed kind: `{k}`.")).unwrap_or_default();
+    format!("\nNote: kind `{kind}` is new to this vault (not in vault.toml), so it was filed under the default rule.{hint} vault_schema lists the kinds.")
+}

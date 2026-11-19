@@ -54,6 +54,7 @@ pub async fn run_search(query: &str, limit: Option<usize>, format: &str) -> Resu
     let engine = engine_cmd::build_engine().await?;
     let opts = SearchOptions {
         limit: limit.unwrap_or(50),
+        fill_any_word: true,
         ..Default::default()
     };
     let results = engine.hybrid_search(query, opts).await?;

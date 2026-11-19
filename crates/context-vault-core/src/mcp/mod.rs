@@ -12,6 +12,7 @@ pub mod tools;
 pub(super) mod tool_schemas;
 pub(super) mod handlers_read;
 pub(super) mod handlers_recall;
+pub(super) mod recall_select;
 pub(super) mod handlers_write;
 pub(super) mod handlers_ingest;
 pub(super) mod handlers_situations;
@@ -41,10 +42,25 @@ pub async fn recall(
     scope: Option<&str>,
     max_hints: usize,
 ) -> Result<String, String> {
+    recall_in(engine, signal, scope, None, None, max_hints).await
+}
+
+/// `recall` from a session working in `cwd`: hints from that area come first (OPS-402).
+/// With `session`, the hints shown are logged against it, so opens can be counted (OPS-473).
+pub async fn recall_in(
+    engine: Arc<dyn VaultEngine>,
+    signal: &str,
+    scope: Option<&str>,
+    cwd: Option<&str>,
+    session: Option<&str>,
+    max_hints: usize,
+) -> Result<String, String> {
     let args = serde_json::json!({
         "signal": signal,
         "signal_type": "prompt",
         "bucket": scope,
+        "cwd": cwd,
+        "session_id": session,
         "max_hints": max_hints,
     });
     handlers_recall::handle_recall(engine, &args).await

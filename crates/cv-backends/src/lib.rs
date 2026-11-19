@@ -6,6 +6,7 @@ pub mod reindex;
 mod reindex_scan;
 pub mod row_map;
 pub mod sqlite;
+mod sqlite_access;
 mod situation_cursor;
 pub mod situations;
 #[cfg(test)]

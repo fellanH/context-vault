@@ -42,6 +42,9 @@ pub struct V5Backend {
     default: usize,
 }
 
+/// v5 keeps no database, so it records no access (OPS-473).
+impl cv_engine::access::AccessLog for V5Backend {}
+
 // async_trait adds must_use to its boxed Future, which is already must_use.
 #[allow(clippy::double_must_use)]
 #[async_trait]
